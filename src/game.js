@@ -166,6 +166,13 @@ export function createGame({ scene, camera, fx, props, hud }) {
     hud.update()
     hud.openWindow('offline')
   }
+  // The server save replaced the state after the payout above: add the same Skill back.
+  function restoreOffline() {
+    if (!offlineReport) return
+    addSkill(offlineReport.skill)
+    changed()
+    hud.update()
+  }
   // The Settings window: sound, music, effects, HUD and pets visibility.
   function applySettings() {
     const st = state.settings
@@ -1170,5 +1177,5 @@ export function createGame({ scene, camera, fx, props, hud }) {
   updateNameTag()
   bloxity.subscribeAuth?.(() => updateNameTag())
 
-  return { actions, checkOffline, update, afterAnimator, setAvatar, isFlying: () => fl.active(), isTraining: () => trainingActive, runSpeed: () => (running ? HUB.treadmillRun : 0), setBoards, resync, flight: fl, eggs }
+  return { actions, checkOffline, restoreOffline, update, afterAnimator, setAvatar, isFlying: () => fl.active(), isTraining: () => trainingActive, runSpeed: () => (running ? HUB.treadmillRun : 0), setBoards, resync, flight: fl, eggs }
 }

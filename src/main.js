@@ -161,13 +161,23 @@ function currentPose() {
 // Free offline training: pay + show the report once the save is known (server load, new account, or
 // a timeout when there is no server).
 let offlineDone = false
+// Paid locally before the server save arrived: that save replaces `state` (hydrate), so the payout
+// is re-applied once on top of it.
+let paidEarly = false
 const checkOffline = () => {
   if (offlineDone) return
   offlineDone = true
+  paidEarly = !net.hydrated
   touchSeen()
   game.checkOffline()
 }
-onNet('hydrated', () => (game.resync(), checkOffline()))
+onNet('hydrated', () => {
+  game.resync()
+  if (offlineDone && paidEarly) {
+    paidEarly = false
+    game.restoreOffline()
+  } else checkOffline()
+})
 onNet('noProgress', checkOffline)
 // No server answer: run on the local stamp, but never while a connected save is still loading
 // (hydrate would overwrite the Skill just paid).
