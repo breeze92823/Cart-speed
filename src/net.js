@@ -129,13 +129,14 @@ let poseAt = 0
 let lastPose = ''
 const cm = (n) => Math.round(n * 100) / 100
 
-// { x, y, z, yaw, speed, vy, grounded, flying, pitch, roll, training }: at most every NET.poseEvery s
-// and only when something changed (the server keeps the last one).
+// { x, y, z, yaw, speed, vy, grounded, flying, pitch, roll, training, ride, body, arms, pull, gx, gz }:
+// at most every NET.poseEvery s and only when something changed (the server keeps the last one).
+// ride / body / arms / pull / gx / gz = the cart launch (flight.js pose()) for remotePlayers.js.
 export function sendPose(p) {
   if (!net.connected) return
   const now = performance.now()
   if (now - poseAt < NET.poseEvery * 1000) return
-  const msg = { x: cm(p.x), y: cm(p.y), z: cm(p.z), yaw: cm(p.yaw), speed: cm(p.speed), vy: cm(p.vy), grounded: !!p.grounded, flying: !!p.flying, pitch: cm(p.pitch), roll: cm(p.roll), training: !!p.training }
+  const msg = { x: cm(p.x), y: cm(p.y), z: cm(p.z), yaw: cm(p.yaw), speed: cm(p.speed), vy: cm(p.vy), grounded: !!p.grounded, flying: !!p.flying, pitch: cm(p.pitch), roll: cm(p.roll), training: !!p.training, ride: p.ride | 0, body: p.body | 0, arms: cm(p.arms ?? 0), pull: cm(p.pull ?? 0), gx: cm(p.gx ?? 0), gz: cm(p.gz ?? 0) }
   const key = Object.values(msg).join()
   if (key === lastPose) return
   poseAt = now

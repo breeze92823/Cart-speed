@@ -14,6 +14,7 @@ import {
 } from 'three'
 import { CART, CHANNEL, FLIGHT } from './config.js'
 import { legoBoxGeo, legoMat, mergedMesh } from './legokit.js'
+import { buildCart as buildShopModel, isCartStyle } from './hub/carts.js'
 
 // The starting gate and the shopping cart of the launch (flight.js).
 //  gate  two red lego posts with yellow knobs on white base plates, and a thick bungee
@@ -85,6 +86,33 @@ function bar(parent, a, b, r, mat) {
 }
 
 // --- Cart model ----------------------------------------------------------------------------
+// The equipped shop cart (hub/carts.js, nose at -Z), turned to face +Z and scaled to the
+// launch cart's size so the rider's seat, the bungee hook and the tumble box still fit.
+const SHOP_SCALE = 0.82
+function buildShopCart(def) {
+  const root = new Group()
+  root.name = 'cart'
+  const body = new Group()
+  root.add(body)
+  const m = buildShopModel(def)
+  const turn = new Group()
+  turn.rotation.y = Math.PI
+  turn.scale.setScalar(SHOP_SCALE)
+  turn.add(m.root, m.animated)
+  body.add(turn)
+  const k = SHOP_SCALE
+  const nose = def.style === 'cart-rocket' ? 2.0 : 1.2 // how far the nose reaches past the centre
+  return {
+    root,
+    body,
+    wheels: m.wheels,
+    spinSign: -1, // the model is turned half round, so its wheels spin the other way
+    tick: m.animated.userData.tick ?? null,
+    hook: new Vector3(0, 0.8 * k, (def.style === 'cart-rocket' ? 1.9 : 0.95) * k),
+    half: new Vector3(0.78 * k, 2.1 * k, Math.max(1.42, nose) * k),
+  }
+}
+
 function buildCart() {
   const root = new Group()
   root.name = 'cart'
@@ -228,6 +256,11 @@ export function createCart(scene, { onImpact } = {}) {
   const spin = new Vector3() // rad/s about the cart's local x (pitch) / z (roll) / y
   const rot = new Euler(0, Math.PI, 0, 'YXZ')
   let rest = 0
+  let elapsed = 0 // drives the cart's own animation (rocket flames, bubble)
+  const spinWheels = (a, add = false) => {
+    const s = cart.spinSign ?? 1
+    for (const w of cart.wheels) w.rotation.x = add ? w.rotation.x + a * s : a * s
+  }
 
   function hookWorld(out) {
     cart.root.updateMatrixWorld(true)
@@ -264,14 +297,16 @@ export function createCart(scene, { onImpact } = {}) {
     get mode() {
       return mode
     },
-    // Builds the gate at (x, gateZ) and drops the cart in just behind it.
-    summon(x, gateZ) {
+    // Builds the gate at (x, gateZ) and drops the cart in just behind it. `def` = the equipped
+    // cart (config SLINGSHOTS entry); without a cart style it is the plain pink cart.
+    summon(x, gateZ, def = null) {
       this.remove()
       gate = buildGate()
       gate.root.position.set(x, CHANNEL.surfaceY, gateZ)
       gate.root.scale.setScalar(0.001)
       scene.add(gate.root)
-      cart = buildCart()
+      cart = isCartStyle(def?.style) ? buildShopCart(def) : buildCart()
+      elapsed = 0
       cart.root.position.set(x, CHANNEL.surfaceY + 6, gateZ + 1.45)
       cart.root.rotation.set(0, Math.PI, 0)
       scene.add(cart.root)
@@ -321,7 +356,7 @@ export function createCart(scene, { onImpact } = {}) {
       cart.body.position.y = Math.abs(Math.sin(rattle * 3.1)) * shakeAmt
       cart.body.rotation.z = Math.sin(rattle * 2.3) * shakeAmt * 0.8
       wheelSpin += (speed / 0.17) * dt
-      for (const w of cart.wheels) w.rotation.x = wheelSpin
+      spinWheels(wheelSpin)
     },
     // The rider is thrown: the cart goes loose with velocity v (world) and a forward flip.
     eject(v) {
@@ -404,6 +439,8 @@ export function createCart(scene, { onImpact } = {}) {
         }
       }
       if (!cart) return event
+      elapsed += dt
+      cart.tick?.(dt, elapsed)
       squash = Math.max(0, squash - dt * 4)
       if (mode === 'gate') {
         // falls in from above with a bounce, then sits; pull draws it back toward +Z (south)
@@ -418,7 +455,7 @@ export function createCart(scene, { onImpact } = {}) {
             onImpact?.(0.7, cart.root.position, 'drop')
           }
           cart.root.rotation.set(-pull * 0.08, Math.PI, 0)
-          for (const w of cart.wheels) w.rotation.x = -pull * 9
+          spinWheels(-pull * 9)
         }
         const sq = Math.sin(squash * Math.PI) * 0.12 * squash
         cart.body.scale.set(1 + sq, 1 - sq * 1.4, 1 + sq)
@@ -465,7 +502,7 @@ export function createCart(scene, { onImpact } = {}) {
             rest += dt
           }
         }
-        for (const w of cart.wheels) w.rotation.x += spin.x * dt * 2 + Math.hypot(vel.x, vel.z) * dt * 3
+        spinWheels(spin.x * dt * 2 + Math.hypot(vel.x, vel.z) * dt * 3, true)
         rot.x = rot.x % TAU
       }
       return event

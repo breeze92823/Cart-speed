@@ -149,6 +149,13 @@ function currentPose() {
     pitch: tilt?.pitch ?? 0,
     roll: tilt?.roll ?? 0,
     training: game.isTraining(),
+    // the cart launch, so the others see the gate, the cart and the body poses (flight.js pose())
+    ride: tilt?.ride ?? 0,
+    body: tilt?.body ?? 0,
+    arms: tilt?.arms ?? 0,
+    pull: tilt?.pull ?? 0,
+    gx: tilt?.gx ?? 0,
+    gz: tilt?.gz ?? 0,
   }
 }
 // Free offline training: pay + show the report once the save is known (server load, new account, or

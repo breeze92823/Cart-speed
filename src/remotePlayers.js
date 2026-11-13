@@ -1,8 +1,10 @@
 // Everyone else in the room, drawn in the world from the room state net.js keeps (net.players, backend
 // PlayerState): the game's character in their Bloxity look (equipped items, proportions, skin), the
 // same procedural animator as the local player (run / jump / land from `speed`, `vy`, `grounded`), the
-// slingshot they hold (with the arm pull while they train), their flight tilt + trail, their equipped
-// pets following them and their title + name over their head. Poses arrive ~10/s, so each remote is
+// slingshot they hold (with the arm pull while they train), their cart launch (the gate, their equipped
+// cart and the body poses: sitting, arms up, flung out, tumbling, lying; pose `ride` / `body` / `arms` /
+// `pull` / `gx` / `gz`), their flight tilt + trail, their equipped pets following them and their
+// title + name over their head. Poses arrive ~10/s, so each remote is
 // extrapolated along its last motion and eased toward that. Nothing here collides; with no server
 // (or disconnected) the set is empty.
 import { Group, Matrix4, Quaternion, Vector3 } from 'three'
@@ -19,6 +21,9 @@ import { animatePet, buildPet } from './petModels.js'
 import { buildSlingshot, makeSign } from './props.js'
 import { isCartStyle } from './hub/carts.js'
 import { createTrail } from './trail.js'
+import { createCart } from './cart.js'
+import { PoseBuffer } from './avatar/rig.js'
+import { BODY_KINDS, writeRidePose } from './ridePose.js'
 
 const LABEL_Y = 2.75 // m over the feet
 const PIVOT = new Vector3(0, 0.95, 0) // flight tilts about the waist (flight.js applyPose)
@@ -55,6 +60,7 @@ export function createRemotePlayers({ scene, onAvatar = () => {} }) {
       emote: new EmotePlayer(), emoteKey: '', bubble: null, uid: '',
       pets: [], petKey: '', petRoot: new Group(),
       trail: null, trailOn: false,
+      cart: null, ride: 0, bodyW: 0, lie: 0, poseT: new PoseBuffer(), poseMix: new PoseBuffer(),
       pos: new Vector3(p.x, p.y, p.z), vel: new Vector3(), at: performance.now(), last: new Vector3(p.x, p.y, p.z),
       yaw: p.yaw, pitch: 0, roll: 0, speed: 0, state: p,
     }
@@ -71,6 +77,7 @@ export function createRemotePlayers({ scene, onAvatar = () => {} }) {
     scene.remove(r.petRoot)
     disposeAnimator(r.animator)
     r.trail?.dispose()
+    r.cart?.remove()
     r.bubble?.remove?.()
     setLabel(r, null)
     remotes.delete(r.id)
@@ -256,6 +263,19 @@ export function createRemotePlayers({ scene, onAvatar = () => {} }) {
       r.speed += (p.speed - r.speed) * ease(8, dt)
       r.animator?.update(dt, { grounded: flying ? false : p.grounded, speed: flying ? 0 : r.speed, verticalVelocity: flying ? 6 : p.vy, turn: 0 })
 
+      // The launch body pose over the animator (flight.js writeBones, same poses from ridePose.js).
+      const ride = flying ? p.ride : 0
+      const kind = flying ? BODY_KINDS[p.body] || '' : ''
+      if (kind && r.animator?.rig) {
+        const lean = ride === 1 ? -0.25 * p.pull : ride === 2 ? Math.min(0.2, r.vel.length() * 0.004) : 0
+        writeRidePose(r.poseT, kind, t, { lean, riding: ride === 2, armsUp: p.arms })
+        r.bodyW = Math.min(1, r.bodyW + dt * (kind === 'sit' ? 8 : 12))
+      } else r.bodyW = Math.max(0, r.bodyW - dt * 6)
+      if (r.bodyW > 0 && r.animator?.rig) {
+        r.poseMix.lerpBetween(r.animator.output, r.poseT, 0.5 - 0.5 * Math.cos(Math.PI * r.bodyW))
+        r.animator.rig.applyPose(r.poseMix)
+      }
+
       // Emotes stop on movement, like our own.
       if (r.emote.active && (p.speed > 0.6 || flying || !p.grounded)) r.emote.stop()
 
@@ -278,11 +298,35 @@ export function createRemotePlayers({ scene, onAvatar = () => {} }) {
       // Place the body: yaw, then the flight tilt about the waist.
       r.root.position.copy(r.pos)
       r.root.rotation.set(flying ? r.pitch : 0, r.yaw, flying ? r.roll : 0)
+      // lying / tumbling on the road lowers the body onto it (flight.js applyPose `lie`)
+      r.lie += ((kind === 'lie' ? 1 : kind === 'tumble' ? 0.7 : 0) - r.lie) * ease(12, dt)
       if (flying) {
         q.setFromEuler(r.root.rotation)
         tmp.copy(PIVOT).applyQuaternion(q)
         r.root.position.add(PIVOT).sub(tmp)
+        r.root.position.y -= r.lie * 0.72 * Math.abs(Math.sin(r.pitch))
       }
+
+      // Their cart launch: the gate pops up and their equipped cart drops in, is drawn back, shot off
+      // with them in it, then tumbles off on its own when they are thrown out (cart.js, as our own).
+      if (ride !== r.ride) {
+        const prev = r.ride
+        r.ride = ride
+        if (ride === 0) r.cart?.remove()
+        else if (prev === 0 && ride <= 2) {
+          r.cart ??= createCart(scene)
+          r.cart.summon(p.gx, p.gz, slingById(p.sling))
+          if (ride === 2) r.cart.release() // seen mid-ride (joined late): straight into the cart
+        } else if (prev === 1 && ride >= 2) {
+          r.cart?.release()
+          if (ride === 3) r.cart?.eject(r.vel)
+        } else if (prev === 2 && ride === 3) r.cart?.eject(r.vel)
+      }
+      if (r.cart?.active) {
+        if (ride === 1) r.cart.setPull(p.pull)
+        if (ride === 2) r.cart.follow(r.root, r.vel.length(), dt)
+      }
+      r.cart?.update(dt)
 
       // The flight trail follows a flying player who has one equipped.
       const trail = flying && p.trail ? trailById(p.trail) : null
