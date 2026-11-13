@@ -171,7 +171,7 @@ export function createTraining({ scene, camera, fx, player, tables = [], onBounc
       w.m.material.opacity = 0.85 * (1 - k)
     }
   }
-  const tableColor = (t) => T.tableColors[t.data.style] ?? '#ffd23a'
+  const tableColor = (t) => t.color ?? t.data.color ?? '#ffd23a'
 
   // per-table squash-and-wobble (keyed by the table handle); amp 1 = a click
   const bounces = new Map()
@@ -226,7 +226,7 @@ export function createTraining({ scene, camera, fx, player, tables = [], onBounc
     if (!pl.grounded) return null
     const p = pl.position
     for (const t of tables) {
-      if (!platformUnlocked(t.data)) continue
+      if (t.belt || !platformUnlocked(t.data)) continue // treadmills train by running, not bouncing
       const dx = t.x - p.x
       const dz = t.z - p.z
       const d = Math.hypot(dx, dz)

@@ -31,7 +31,7 @@ import { gearLevel, state } from '../state.js'
 // Every encounter: spawn ahead with a warning -> 'tell' -> 'attack' (strike exactly when the
 // player crosses its z) -> resolve (dodge / close call / hit / blocked) -> 'hold'? -> 'recover'.
 
-const surface = CHANNEL.slimeY
+const surface = CHANNEL.surfaceY
 const halfW = CHANNEL.halfWidth
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v)
 const lerp = (a, b, k) => a + (b - a) * k

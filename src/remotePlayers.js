@@ -17,6 +17,7 @@ import { applyProportions, attachEquippedAccessories } from './avatar/loader.js'
 import { disposeAnimator, makeAnimator } from './avatar/animator.js'
 import { animatePet, buildPet } from './petModels.js'
 import { buildSlingshot, makeSign } from './props.js'
+import { isCartStyle } from './hub/carts.js'
 import { createTrail } from './trail.js'
 
 const LABEL_Y = 2.75 // m over the feet
@@ -259,12 +260,14 @@ export function createRemotePlayers({ scene, onAvatar = () => {} }) {
       if (r.emote.active && (p.speed > 0.6 || flying || !p.grounded)) r.emote.stop()
 
       // The held slingshot, and the arm that holds it (raised, pulled back while they train).
-      const style = slingById(p.sling)?.style ?? ''
+      const sling = slingById(p.sling)?.style ?? ''
+      const style = isCartStyle(sling) ? '' : sling // carts are ridden, not held
       if (style && style !== r.heldStyle && r.avatar) attachSling(r, style)
       else if (!style && r.held) {
         r.held.parent?.remove(r.held)
         r.held = null
         r.heldStyle = ''
+        r.armBinding = null
       }
       if (r.held) r.held.visible = !flying
       r.pull += ((p.training ? 0.5 + 0.5 * Math.sin(t * 14) : 0) - r.pull) * ease(18, dt)
