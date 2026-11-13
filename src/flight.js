@@ -8,9 +8,10 @@ import { buildRiver } from './river.js'
 import { createFlightHud } from './flightHud.js'
 import { createTrail } from './trail.js'
 import { PoseBuffer } from './avatar/rig.js'
+import { BODY_KINDS, writeRidePose } from './ridePose.js'
 import * as snd from './audio/flight.js'
 import * as laneSnd from './audio/lane.js'
-import { addSkill, changed, flyMult, questFlight, skillPerClick, state, trailById, winsMult } from './state.js'
+import { addSkill, changed, flyMult, questFlight, skillPerClick, slingById, state, trailById, winsMult } from './state.js'
 import { createLane, distanceWins } from './lane/hazards.js'
 import { createLaneHud } from './laneHud.js'
 
@@ -38,39 +39,10 @@ const easeInOut = (s) => 0.5 - 0.5 * Math.cos(Math.PI * s)
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v)
 const lerp = (a, b, k) => a + (b - a) * k
 const TAU = Math.PI * 2
-const deg = (d) => (d * Math.PI) / 180
 
 // The Skill-based distance x the ridden cart's +FLY % (state.js flyMult), capped at the road's end.
 export function flightDistance() {
   return Math.min(FLIGHT.maxDistance, (FLIGHT.baseDistance + FLIGHT.scale * Math.pow(Math.max(0, state.skill), FLIGHT.exponent)) * flyMult())
-}
-
-// Body poses written over the animator (character space: +x swings a limb backward,
-// legs forward = -x, knees / elbows bend with +x, ArmL z+ / ArmR z- = out to the side).
-const POSES = {
-  sit: {
-    LegL1: { x: deg(-76), z: deg(9) }, LegR1: { x: deg(-76), z: deg(-9) }, LegL2: { x: deg(42) }, LegR2: { x: deg(42) },
-    ArmL1: { x: deg(-58), z: deg(22) }, ArmR1: { x: deg(-58), z: deg(-22) }, ArmL2: { x: deg(38) }, ArmR2: { x: deg(38) },
-    Spine1: { x: deg(4) },
-  },
-  // thrown: arms flung up and wide, legs trailing
-  fling: {
-    LegL1: { x: deg(18), z: deg(16) }, LegR1: { x: deg(-10), z: deg(-16) }, LegL2: { x: deg(40) }, LegR2: { x: deg(55) },
-    ArmL1: { x: deg(-150), z: deg(48) }, ArmR1: { x: deg(-150), z: deg(-48) }, ArmL2: { x: deg(20) }, ArmR2: { x: deg(20) },
-    Spine1: { x: deg(-12) }, Neck1: { x: deg(-18) },
-  },
-  // bouncing on the asphalt: limbs all over the place
-  tumble: {
-    LegL1: { x: deg(-40), z: deg(30) }, LegR1: { x: deg(20), z: deg(-34) }, LegL2: { x: deg(70) }, LegR2: { x: deg(35) },
-    ArmL1: { x: deg(-100), z: deg(80) }, ArmR1: { x: deg(-60), z: deg(-85) }, ArmL2: { x: deg(45) }, ArmR2: { x: deg(30) },
-    Spine1: { x: deg(18) },
-  },
-  // face down on the road, spread out like a starfish
-  lie: {
-    LegL1: { x: deg(-4), z: deg(20) }, LegR1: { x: deg(-4), z: deg(-22) }, LegL2: { x: deg(14) }, LegR2: { x: deg(8) },
-    ArmL1: { x: deg(-128), z: deg(52) }, ArmR1: { x: deg(-122), z: deg(-58) }, ArmL2: { x: deg(16) }, ArmR2: { x: deg(22) },
-    Spine1: { x: deg(-6) }, Neck1: { x: deg(-24), y: deg(18) },
-  },
 }
 
 export function createFlight({ scene, camera, fx, ringPulse, blocked = () => false, onDone }) {
@@ -78,6 +50,7 @@ export function createFlight({ scene, camera, fx, ringPulse, blocked = () => fal
   const seatY = surface + CART.seatY
   const cart = createCart(scene, { onImpact: cartImpact })
   const vanishAt = new Vector3()
+  const gateAt = { x: 0, z: 0 } // where this launch's gate stands (sent to the other players)
   buildRiver(scene)
   const hud = createFlightHud(camera)
   const trail = createTrail(scene)
@@ -398,7 +371,9 @@ export function createFlight({ scene, camera, fx, ringPulse, blocked = () => fal
     const p = player.position
     const x = clamp(p.x, -CHANNEL.halfWidth + 4, CHANNEL.halfWidth - 4)
     const gateZ = clamp(p.z - CART.ahead, FLY_ZONE.minZ + 1.2, FLY_ZONE.maxZ - 4)
-    cart.summon(x, gateZ)
+    cart.summon(x, gateZ, slingById(state.equippedSling)) // ride the equipped cart
+    gateAt.x = x
+    gateAt.z = gateZ
     f = {
       phase: 'summon',
       t: 0,
@@ -995,47 +970,10 @@ export function createFlight({ scene, camera, fx, ringPulse, blocked = () => fal
     if (!kind || !animator?.rig) {
       poseW = Math.max(0, poseW - dt * 6)
     } else {
-      target.applyDefinition(POSES[kind])
-      if (kind === 'fling') {
-        // windmilling arms, kicking legs
-        const a = Math.sin(time * 16)
-        target.add('ArmL1', a * 0.6, 0, Math.cos(time * 13) * 0.3)
-        target.add('ArmR1', -a * 0.6, 0, Math.cos(time * 14) * 0.3)
-        target.add('LegL1', Math.sin(time * 18) * 0.5)
-        target.add('LegR1', -Math.sin(time * 18) * 0.5)
-      } else if (kind === 'tumble') {
-        target.add('ArmL1', Math.sin(time * 21) * 0.5, 0, Math.sin(time * 17) * 0.3)
-        target.add('ArmR1', Math.sin(time * 19 + 1) * 0.5, 0, Math.sin(time * 15) * 0.3)
-        target.add('LegL1', Math.sin(time * 23) * 0.4)
-        target.add('LegR1', Math.sin(time * 20 + 2) * 0.4)
-      } else if (kind === 'sit' && f) {
-        // grip, lean into the draw / the speed, a happy kick of the feet while rolling
-        const lean = f.phase === 'pull' ? -0.25 * easeInOut(Math.min(1, f.t / FLIGHT.pull)) : f.phase === 'fly' ? Math.min(0.2, f.speed * 0.004) : 0
-        target.add('Spine1', lean)
-        target.add('Neck1', -lean * 0.6)
-        if (f.phase === 'fly') {
-          target.add('LegL1', Math.sin(time * 9) * 0.08)
-          target.add('LegR1', -Math.sin(time * 9) * 0.08)
-          target.add('ArmL1', -0.25)
-          target.add('ArmR1', -0.25)
-          // up in the sky the arms go up over the head, waving ("wheee")
-          const u = f.armsUp
-          if (u > 0.01) {
-            const wave = Math.sin(time * 11) * 0.3 * u
-            target.add('ArmL1', -1.75 * u + wave, 0, 0.35 * u)
-            target.add('ArmR1', -1.75 * u - wave, 0, -0.35 * u)
-            target.add('ArmL2', -0.4 * u)
-            target.add('ArmR2', -0.4 * u)
-            target.add('LegL1', Math.sin(time * 13) * 0.18 * u)
-            target.add('LegR1', -Math.sin(time * 13) * 0.18 * u)
-          }
-        }
-      } else if (kind === 'lie' && f?.phase === 'rest') {
-        // a dazed twitch now and then
-        const tw = Math.max(0, Math.sin(f.t * 5.5)) * Math.max(0, 1 - f.t / 1.4)
-        target.add('LegL2', tw * 0.4)
-        target.add('ArmR1', 0, 0, -tw * 0.2)
-      }
+      // grip, lean into the draw / the speed; a dazed twitch now and then lying down
+      const lean = f?.phase === 'pull' ? -0.25 * easeInOut(Math.min(1, f.t / FLIGHT.pull)) : f?.phase === 'fly' ? Math.min(0.2, f.speed * 0.004) : 0
+      const twitch = f?.phase === 'rest' ? Math.max(0, Math.sin(f.t * 5.5)) * Math.max(0, 1 - f.t / 1.4) : 0
+      writeRidePose(target, kind, time, { lean, riding: f?.phase === 'fly', armsUp: f?.armsUp ?? 0, twitch })
       poseW = Math.min(1, poseW + dt * (kind === 'sit' ? 8 : 12))
     }
     if (poseW <= 0 || !animator?.rig) return
@@ -1043,6 +981,7 @@ export function createFlight({ scene, camera, fx, ringPulse, blocked = () => fal
     animator.rig.applyPose(mixed)
   }
   let poseTime = 0
+  let bodyKind = null
   function applyPose(group, dt) {
     poseTime += dt
     group.rotation.order = 'YXZ' // spin about the world vertical, tilt in the body frame (+x = head forward)
@@ -1124,6 +1063,7 @@ export function createFlight({ scene, camera, fx, ringPulse, blocked = () => fal
       spinYaw = f.spin
     } else spinYaw = 0
     if (f && !(f.phase === 'fly' && f.plan?.segs[f.seg]?.kind === 'sky')) f.armsUp = Math.max(0, f.armsUp - dt * 5)
+    bodyKind = bones
     writeBones(bones, poseTime, dt)
     if (snap) pitch = targetPitch
     else pitch += (targetPitch - pitch) * Math.min(1, dt * 10)
@@ -1151,7 +1091,24 @@ export function createFlight({ scene, camera, fx, ringPulse, blocked = () => fal
     setAnimator: (a) => (animator = a),
     active: () => !!f,
     // Body tilt for the other players' copy of this launch (net.js `pose`): somersault, bank, spin.
-    pose: () => ({ pitch, roll, spin: f ? spinYaw : 0 }),
+    // ride: 0 none, 1 at the gate (summon / hop / settle / pull), 2 riding the cart, 3 out of it;
+    // body: the pose kind (ridePose.js BODY_KINDS index); arms: arms up 0..1; pull: the draw 0..1;
+    // gx / gz: the gate. The others rebuild the gate + cart and the body pose from these.
+    pose: () => {
+      const ph = f?.phase
+      const ride = !f ? 0 : ph === 'summon' || ph === 'hop' || ph === 'settle' || ph === 'pull' ? 1 : ph === 'fly' && f.inCart ? 2 : 3
+      return {
+        pitch,
+        roll,
+        spin: f ? spinYaw : 0,
+        ride,
+        body: Math.max(0, BODY_KINDS.indexOf(bodyKind ?? '')),
+        arms: f?.armsUp ?? 0,
+        pull: ph === 'pull' ? easeInOut(Math.min(1, f.t / FLIGHT.pull)) : 0,
+        gx: gateAt.x,
+        gz: gateAt.z,
+      }
+    },
     debug: () => f, // dev console: __game.game.flight.debug()
     lane, // dev console: __game.game.flight.lane.debug()
   }

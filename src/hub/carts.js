@@ -133,12 +133,18 @@ export function buildCart(cart) {
   // chassis: lower tray rails + legs down to the casters
   const dark = std('#2a2e3a', { metalness: 0.5, roughness: 0.4 })
   const legs = [new Vector3(-0.55, 0.32, 1.0), new Vector3(0.55, 0.32, 1.0), new Vector3(0.5, 0.32, -0.95), new Vector3(-0.5, 0.32, -0.95)]
+  const tire = std('#1b1d24', { roughness: 0.8 })
+  const hub = std('#f2f2f6', { metalness: 0.4, roughness: 0.3 })
+  const wheels = [] // each wheel in its own group at the axle, so the launch (cart.js) can spin it
   for (let i = 0; i < 4; i++) {
     bar(root, legs[i], bottom[i], 0.04, barMat)
     bar(root, legs[i], legs[(i + 1) % 4], 0.03, barMat)
-    // caster: fork + black wheel
+    // caster: fork + black wheel with a light hub (shows the spin)
     put(root, new BoxGeometry(0.06, 0.16, 0.14), dark, legs[i].x, 0.26, legs[i].z)
-    put(root, new CylinderGeometry(0.15, 0.15, 0.1, 14).rotateZ(Math.PI / 2), std('#1b1d24', { roughness: 0.8 }), legs[i].x, 0.15, legs[i].z)
+    const w = placed(root, legs[i].x, 0.15, legs[i].z)
+    put(w, new CylinderGeometry(0.15, 0.15, 0.1, 14).rotateZ(Math.PI / 2), tire)
+    put(w, new BoxGeometry(0.11, 0.2, 0.05), hub)
+    wheels.push(w)
   }
   put(root, new BoxGeometry(1.0, 0.03, 1.8), wireMat, 0, 0.34, 0.02)
   // handle: two arms back from the top corners, the bar, the grip
@@ -173,7 +179,7 @@ export function buildCart(cart) {
   }
   if (s.lava) for (let i = 0; i < 5; i++) put(root, new BoxGeometry(0.22, 0.12, 0.22), glowMat('#ff7a1f', 2), -0.35 + (i % 3) * 0.35, 0.9, -0.6 + i * 0.35)
   if (s.galaxy) for (let i = 0; i < 6; i++) put(root, new IcosahedronGeometry(0.06, 0), glowMat('#ffffff', 2.5), Math.sin(i * 2.1) * 0.55, 1.1 + (i % 3) * 0.25, Math.cos(i * 1.7) * 0.8, false)
-  return { root, animated }
+  return { root, animated, wheels }
 }
 
 const STATUS = {
