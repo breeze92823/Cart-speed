@@ -41,7 +41,7 @@ export const COLORS = {
 // --- Cliffs ---------------------------------------------------------------------------
 // Terraced blocky cliffs: for every segment along an edge, tiers of boxes step up and
 // away from the edge with a little random jitter so the outline reads hand-built.
-export function terraceRun({ along, from, to, edge, outward, seg, tiers, rand, geos, colliders, trees, treeEvery }) {
+export function terraceRun({ along, from, to, edge, outward, seg, tiers, rand, geos, colliders, trees, treeEvery, noGrassMid = false }) {
   for (let s = from; s < to; s += seg) {
     const len = Math.min(seg, to - s)
     const mid = s + len / 2
@@ -55,6 +55,11 @@ export function terraceRun({ along, from, to, edge, outward, seg, tiers, rand, g
       const w = Math.abs(far - near)
       const c = (near + far) / 2
       const geo = along === 'z' ? legoBoxGeo(w, h - lo, len + 0.02, c, (h + lo) / 2, mid) : legoBoxGeo(len + 0.02, h - lo, w, mid, (h + lo) / 2, c)
+      if (noGrassMid && k > 0 && k < tiers.length - 1) {
+        // middle tiers: no grass fringe (aTop + 1000 flags it for the cliff shader)
+        const a = geo.attributes.aTop
+        for (let i = 0; i < a.count; i++) a.setX(i, a.getX(i) + 1000)
+      }
       geos.push(geo)
       if (colliders && k < 2) {
         if (along === 'z') addFixed(RAPIER.ColliderDesc.cuboid(w / 2, (h - lo) / 2, len / 2), { x: c, y: (h + lo) / 2, z: mid })

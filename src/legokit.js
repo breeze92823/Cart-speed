@@ -116,12 +116,20 @@ const fragBody = /* glsl */ `
       } else if (n.y > -0.5) {
         float along = abs(n.x) > 0.5 ? vLegoPos.z : vLegoPos.x;
         float col = floor(along / studSize);
-        float drip = studSize * (1.0 + floor(legoHash(col + floor(vLegoTop)) * 3.2));
-        float depth = vLegoTop - vLegoPos.y;
-        if (depth < drip) {
-          diffuseColor.rgb = cliffGrass * (depth < studSize * 0.5 ? 1.05 : 0.92);
+        // aTop >= 500 flags a box with no grass fringe (the real top is aTop - 1000)
+        float noGrass = vLegoTop > 500.0 ? 1.0 : 0.0;
+        float topY = vLegoTop - noGrass * 1000.0;
+        float drip = studSize * (2.0 + floor(legoHash(col + floor(topY)) * 3.2));
+        float depth = topY - vLegoPos.y;
+        if (noGrass < 0.5 && depth < drip) {
+          // bright lip on top, darker saturated body, dark outline on the lower edge so the
+          // fringe reads against both the dirt and the green terrace tops around it
+          vec3 g = cliffGrass * vec3(0.62, 0.84, 0.52);
+          if (depth < studSize * 0.5) g = cliffGrass * 1.12;
+          else if (depth > drip - studSize * 0.45) g = cliffGrass * vec3(0.30, 0.50, 0.24);
+          diffuseColor.rgb = g;
         } else {
-          vec2 cc = floor(vec2(along, vLegoPos.y - vLegoTop) / (checkSize * 1.5));
+          vec2 cc = floor(vec2(along, vLegoPos.y - topY) / (checkSize * 1.5));
           diffuseColor.rgb = mod(cc.x + cc.y, 2.0) < 1.0 ? cliffA : cliffB;
         }
       }
