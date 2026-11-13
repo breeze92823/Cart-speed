@@ -8,6 +8,8 @@ import {
   MeshStandardMaterial,
   RepeatWrapping,
   SRGBColorSpace,
+  Vector2,
+  Vector4,
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { STUD, CHECKER } from './config.js'
@@ -138,9 +140,31 @@ const fragBody = /* glsl */ `
   }
 `
 
-// opts: { checker: [a, b], cliff: { a, b, grass }, roughness, emissive, ... }
+// Optional `windows`: side faces get a world-space grid of windows (cell = [w, h] m, the
+// window inside each cell = [x0, x1, y0, y1] fractions), above `base` m and below the box's
+// top minus `parapet` m. A few panes (litRate) are lit and glow a little. Runs after the
+// vertex colours, so the glass is not tinted by the wall colour.
+const fragWindows = /* glsl */ `
+  {
+    vec3 wn = normalize(vLegoNormal);
+    if (wn.y < 0.6 && wn.y > -0.5 && vLegoPos.y > winBase && vLegoPos.y < vLegoTop - winParapet) {
+      float along = abs(wn.x) > 0.5 ? vLegoPos.z : vLegoPos.x;
+      vec2 cell = vec2(along / winCell.x, vLegoPos.y / winCell.y);
+      vec2 f = fract(cell);
+      if (f.x > winBox.x && f.x < winBox.y && f.y > winBox.z && f.y < winBox.w) {
+        float h = legoHash(floor(cell.x) * 7.13 + floor(cell.y) * 31.7 + sign(wn.x + wn.z) * 3.1);
+        float lit = step(1.0 - winLitRate, h);
+        float sheen = smoothstep(winBox.z, winBox.w, f.y) * 0.25;
+        diffuseColor.rgb = mix(winGlass * (1.0 + sheen), winLit, lit);
+        totalEmissiveRadiance += winLit * lit * winGlow;
+      }
+    }
+  }
+`
+
+// opts: { checker: [a, b], cliff: { a, b, grass }, windows: { cell, box, glass, lit, litRate, glow, base, parapet }, roughness, emissive, ... }
 export function legoMat(color = '#ffffff', opts = {}) {
-  const { checker, cliff, ...rest } = opts
+  const { checker, cliff, windows, ...rest } = opts
   const m = new MeshStandardMaterial({ color, roughness: 0.55, metalness: 0, ...rest })
   const uniforms = {
     studMap: { value: studTexture() },
@@ -156,12 +180,28 @@ export function legoMat(color = '#ffffff', opts = {}) {
   m.defines = { ...(m.defines || {}) }
   if (checker) m.defines.LEGO_CHECKER = ''
   if (cliff) m.defines.LEGO_CLIFF = ''
+  let winHead = ''
+  if (windows) {
+    const b = windows.box ?? [0.3, 0.7, 0.3, 0.78]
+    Object.assign(uniforms, {
+      winCell: { value: new Vector2(...(windows.cell ?? [3, 3])) },
+      winBox: { value: new Vector4(b[0], b[1], b[2], b[3]) },
+      winGlass: { value: new Color(windows.glass ?? '#5fa8d8') },
+      winLit: { value: new Color(windows.lit ?? '#ffe39a') },
+      winLitRate: { value: windows.litRate ?? 0.15 },
+      winGlow: { value: windows.glow ?? 0.35 },
+      winBase: { value: windows.base ?? 0.8 },
+      winParapet: { value: windows.parapet ?? 0.6 },
+    })
+    winHead = 'uniform vec2 winCell; uniform vec4 winBox; uniform vec3 winGlass; uniform vec3 winLit; uniform float winLitRate; uniform float winGlow; uniform float winBase; uniform float winParapet;\n'
+  }
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms)
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\n${vertexHead}`).replace('#include <begin_vertex>', `#include <begin_vertex>\n${vertexBody}`)
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>\n${fragHead}`).replace('#include <map_fragment>', `#include <map_fragment>\n${fragBody}`)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>\n${fragHead}${winHead}`).replace('#include <map_fragment>', `#include <map_fragment>\n${fragBody}`)
+    if (windows) sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>\n${fragWindows}`)
   }
-  m.customProgramCacheKey = () => `lego-${checker ? 'c' : ''}${cliff ? 'k' : ''}`
+  m.customProgramCacheKey = () => `lego-${checker ? 'c' : ''}${cliff ? 'k' : ''}${windows ? 'w' : ''}`
   m.userData.legoUniforms = uniforms
   return m
 }

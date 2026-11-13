@@ -9,14 +9,15 @@ export const DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true'
 
 // --- World (metres: +X east, +Z south, +Y up) -------------------------------
 export const GROUND_Y = 0
-// The lobby (world.js): a lego-stud plaza ringed by terraced checkered cliffs.
-// North (-Z) is the Flying Zone strip and the long slime channel beyond it.
+// The lobby (src/hub/): a lavender-path lego plaza on checker grass ringed by terraced
+// cliffs. North (-Z) is the yellow Launch Zone strip and the long road (the lane) beyond it.
 export const STUD = 0.75 // m per lego stud
 export const CHECKER = 3 // m per green checker square (4 studs)
-export const PLAZA = { minX: -48, maxX: 48, minZ: -46, maxZ: 54 }
-export const FLY_ZONE = { minX: -30, maxX: 30, minZ: -46, maxZ: -38 } // walk in here = launch
-export const CHANNEL = { halfWidth: 30, slimeY: -2.2, length: 3200 } // slime river, from z = PLAZA.minZ north
-export const SPAWN = { x: 0, y: 0.05, z: 8 }
+export const PLAZA = { minX: -51, maxX: 51, minZ: -36, maxZ: 63 } // multiples of STUD and CHECKER
+export const FLY_ZONE = { minX: -30, maxX: 30, minZ: -36, maxZ: -27 } // the Launch Zone: walk in here = LAUNCH button
+// The lane: a long road from z = PLAZA.minZ north, flush with the plaza (surfaceY).
+export const CHANNEL = { halfWidth: 30, surfaceY: 0, length: 3200 }
+export const SPAWN = { x: 0, y: 0.3, z: 6 } // on the yellow spawn pad
 export const SPAWN_FACING = Math.PI // yaw the character faces on spawn (PI = toward -Z)
 
 // --- Player modes (modes.js) -------------------------------------------------
@@ -158,13 +159,18 @@ export const CAMERA = {
   speedFov: 6, // degrees the FOV widens at sprint speed
   speedEase: 3, // 1/s the speed framing eases in and out
   clearEase: 6, // 1/s the boom eases back out once a wall stops blocking it
-  // While flying (flight.js drives the phase): boom length, pitch (+ = looking down),
-  // follow rate, ease rate and FOV added at full speed. aim = sitting in the slingshot.
+  // During a launch (flight.js drives the phase): boom length, pitch (+ = looking down),
+  // follow rate. aim = sitting in the cart at the gate, ride = rolling down the road,
+  // sky = shot up into the sky (high, looking down at the road), dive = the fall back
+  // down, air = thrown out (or the cart hopping), skip = tumbling, rest = lying on the road.
   flight: {
-    aim: { distance: 9.5, pitch: 0.16, follow: 10 },
-    air: { distance: 13, pitch: -0.1, follow: 22 },
-    skip: { distance: 15, pitch: 0.26, follow: 12 },
-    rest: { distance: 13, pitch: 0.34, follow: 8 },
+    aim: { distance: 7.5, pitch: 0.2, follow: 10 },
+    sky: { distance: 9, pitch: 0.4, follow: 16 },
+    dive: { distance: 8, pitch: 0.3, follow: 18 },
+    ride: { distance: 7.8, pitch: 0.16, follow: 24 },
+    air: { distance: 10, pitch: 0.06, follow: 18 },
+    skip: { distance: 9, pitch: 0.32, follow: 12 },
+    rest: { distance: 7.5, pitch: 0.48, follow: 6 },
     ease: 3,
     fov: 16,
     fovSpeed: 90, // m/s that reads as full speed
@@ -320,28 +326,33 @@ export const NET = {
 // Slingshots on the west terrace. skill = Skill gained per training click.
 // row 0 = lower front row (south -> north), row 1 = upper back row.
 export const SLINGSHOTS = [
-  { id: 'twig', name: 'Twig Slingshot', skill: 1, price: 0, style: 'twig', row: 0 },
-  { id: 'wrap', name: 'Wrapped Slingshot', skill: 3, price: 2, style: 'wrap', row: 0 },
-  { id: 'ember', name: 'Ember Slingshot', skill: 5, price: 10, style: 'ember', row: 0 },
-  { id: 'steel', name: 'Steel Slingshot', skill: 12, price: 40, style: 'steel', row: 0 },
-  { id: 'royal', name: 'Royal Slingshot', skill: 30, price: 150, style: 'royal', row: 0 },
-  { id: 'vine', name: 'Vine Slingshot', skill: 75, price: 500, style: 'vine', row: 1 },
-  { id: 'frost', name: 'Frost Slingshot', skill: 200, price: 1500, style: 'frost', row: 1 },
-  { id: 'shadow', name: 'Shadow Slingshot', skill: 500, price: 4500, style: 'shadow', row: 1 },
-  { id: 'sun', name: 'Sunwing Slingshot', skill: 1250, price: 14000, style: 'sun', row: 1 },
-  { id: 'blaster', name: 'Slime Blaster', skill: 3500, price: 40000, style: 'blaster', row: 1 },
+  // The Cart Shop's carts: they replaced the slingshots (ids kept so old saves carry over). `skill` =
+  // Skill per training click; `fly` = +% launch distance while riding it (state.js flyMult);
+  // row 0 = the front row, row 1 = the raised back row, each listed north -> south.
+  { id: 'twig', name: 'Classic', skill: 1, price: 0, style: 'cart-classic', color: '#c9d2dc', fly: 0, row: 0, tag: 'Starter cart' },
+  { id: 'wrap', name: 'Bubblegum', skill: 3, price: 2, style: 'cart-bubblegum', color: '#ff7ad0', fly: 10, row: 0 },
+  { id: 'ember', name: 'Lime Racer', skill: 5, price: 10, style: 'cart-racer', color: '#7dff3a', fly: 20, row: 0 },
+  { id: 'steel', name: 'Ocean', skill: 12, price: 40, style: 'cart-ocean', color: '#3fb4ff', fly: 30, row: 0 },
+  { id: 'royal', name: 'Gold', skill: 30, price: 150, style: 'cart-gold', color: '#ffcf3a', fly: 45, row: 0 },
+  { id: 'vine', name: 'Neon', skill: 75, price: 500, style: 'cart-neon', color: '#2af0ff', fly: 60, row: 1 },
+  { id: 'frost', name: 'Rocket', skill: 200, price: 1500, style: 'cart-rocket', color: '#d6dde6', fly: 80, row: 1 },
+  { id: 'shadow', name: 'Candy', skill: 500, price: 4500, style: 'cart-candy', color: '#ff8ad8', fly: 100, row: 1 },
+  { id: 'sun', name: 'Lava', skill: 1250, price: 14000, style: 'cart-lava', color: '#ff5a1f', fly: 125, row: 1 },
+  { id: 'blaster', name: 'Galaxy', skill: 3500, price: 40000, style: 'cart-galaxy', color: '#8a5cff', fly: 150, row: 1 },
 ]
 
-// Training tables on the east terrace. Standing on an unlocked one multiplies training.
-// rebirths = needed to unlock for free; price = Wins to unlock (the "All Worlds" ones).
+// Power treadmills (the hub's training spots). Standing on an unlocked one makes the avatar run on the
+// belt and multiplies training. The east row unlocks with rebirths; the west row is bought with Wins
+// and counts in every world (the reference sold those for premium currency).
 export const PLATFORMS = [
-  { id: 'target', mult: 1, rebirths: 0, style: 'target', x: 25.5, z: -21, step: 0 },
-  { id: 'cloud', mult: 4, rebirths: 2, style: 'cloud', x: 25.5, z: -6, step: 0 },
-  { id: 'leaf', mult: 10, rebirths: 4, style: 'leaf', x: 25.5, z: 9, step: 0 },
-  { id: 'frost', mult: 20, rebirths: 6, style: 'frost', x: 40.5, z: -27, step: 2 },
-  { id: 'lava', mult: 3, price: 2500, style: 'lava', x: 40.5, z: -14.5, step: 2 },
-  { id: 'void', mult: 15, price: 90000, style: 'void', x: 40.5, z: -2, step: 2 },
-  { id: 'gold', mult: 50, price: 750000, style: 'gold', x: 40.5, z: 10.5, step: 2 },
+  { id: 'tm1', mult: 1, rebirths: 0, style: 'white', color: '#3fc8ff', flower: '#4fa8ff' },
+  { id: 'tm3', mult: 3, rebirths: 1, style: 'white', color: '#46d84a', flower: '#3fcf5a' },
+  { id: 'tm10', mult: 10, rebirths: 2, style: 'white', color: '#ffc21f', flower: '#ffd23a' },
+  { id: 'tm25', mult: 25, rebirths: 3, style: 'white', color: '#ff8a1f', flower: '#ffa53a' },
+  { id: 'tm60', mult: 60, rebirths: 4, style: 'white', color: '#ff3b4a', flower: '#ff5a6a' },
+  { id: 'tm100', mult: 100, price: 250e3, style: 'blossom', color: '#ff5fc8' },
+  { id: 'tm250', mult: 250, price: 1.5e6, style: 'royal', color: '#ffcf3a' },
+  { id: 'tm1000', mult: 1000, price: 10e6, style: 'rainbow', color: '#c45cff' },
 ]
 
 // Free offline training: while the player is away they keep training on their best table at
@@ -358,11 +369,15 @@ export const skipRebirthPrice = (rebirths) => Math.round(SKIP_REBIRTH.base * Mat
 // Level from total Skill: level L -> L+1 costs (a + b L) Skill.
 export const LEVEL = { a: 4, b: 1.6 }
 
-// Flight over the slime (flight.js). Press FLY in the Flying Zone -> hop into the
-// nearest giant slingshot -> it pulls back and fires -> one big arc -> the player
-// skips across the slime like a stone a few times -> slides -> sinks -> reward.
-// The total distance D comes from Skill (same curve as before, so the economy is
-// unchanged); airShare of it is the launch arc, the rest is skips and the slide.
+// The cart launch (flight.js + cart.js). Press LAUNCH in the Launch Zone -> a starting
+// gate (two red lego posts and a bungee) and a shopping cart pop up -> the player hops
+// in -> the cart is drawn back against the bungee and the bungee SHOOTS it up into the
+// sky with the rider inside: a big arc (climb, apex, then a fall that speeds up) over
+// the road, crossing the painted power lines (each pays Skill = "power") -> the cart
+// slams down onto the asphalt, the rider is thrown out over its nose: a short low arc,
+// a few tumbling bounces and a face-down skid -> confetti + reward. The total distance
+// D comes from Skill (same curve as before, so the economy is unchanged): all but a
+// short tail is flown in the cart.
 export const FLIGHT = {
   baseDistance: 14, // m with zero skill
   scale: 15, // distance = base + scale * skill^exponent
@@ -372,33 +387,77 @@ export const FLIGHT = {
   steer: 14, // m/s sideways with A/D / joystick
   raceTokensPerFlight: 1,
   // launch
-  hopIn: 0.38, // s jumping into the pouch
-  pull: 1.05, // s the pouch is drawn back
-  pullBack: 3.4, // m the pouch travels back (+Z) at full draw
-  pullDown: 0.7, // m it sags at full draw
-  // the launch arc
-  airShare: 0.5,
-  airPeak: [4, 60], // m apex above the pouch: clamp(air * airPeakPerMetre, ...)
-  airPeakPerMetre: 0.3,
-  airGravity: [30, 9], // m/s^2, short lobs are snappy, the longest flights float
-  flips: [1, 3], // forward somersaults during the arc (more on longer flights)
-  // skipping on the slime (hop i is hopDecay^i of the first one)
-  skips: { base: 2, per: 40, min: 2, max: 9 }, // count = base + log2(1 + D / per)
-  hopDecay: 0.6,
-  hopHeightPerMetre: 0.2, // hop apex = length * this (clamped)
-  hopHeight: [0.5, 30],
-  hopGravity: 40,
-  skipSkill: 1, // Skill per skip = skip number x this x Skill per click
-  slide: [1.5, 12], // m slid on the surface after the last skip: clamp(D * 0.05, ...)
-  slideTime: [0.5, 2.2],
-  sinkTime: 1.5, // s sinking into the slime before the reward
-  rewardTime: 1.7, // s the reward shows before going back
+  hopIn: 0.42, // s jumping into the cart
+  settle: 0.25, // s sitting down before the pull starts
+  pull: 1.0, // s the cart is drawn back against the bungee
+  pullBack: 2.4, // m the cart travels back (+Z) at full draw
+  // the shot into the sky (in the cart): apex = clamp(base + L * perMetre, height), time =
+  // clamp(timeBase + sqrt(L) * timePerSqrtM, time); the apex comes at apexAt of the time
+  // (a slower climb, a faster fall); the forward speed eases to endSpeed x the start.
+  sky: {
+    heightBase: 5,
+    heightPerMetre: 0.2,
+    height: [5, 120], // m above the road
+    timeBase: 1.6,
+    timePerSqrtM: 0.5,
+    time: [1.8, 26], // s in the air
+    apexAt: 0.52,
+    endSpeed: 0.6,
+    whistle: 2.6, // s before touchdown the falling whistle starts
+    marker: 0.5, // share of the fall after which the landing marker shows on the road
+  },
+  tail: { share: 0.03, min: 7, max: 22 }, // m after the cart lands (toss + tumble + skid): clamp(D * share, ...)
+  rollSpeed: [13, 90], // m/s off the gate: shortest -> longest rides (lerp by sqrt(D / maxDistance))
+  rollEnd: 0.32, // speed left (x start speed) when the wheels lock
+  rollMinTime: 1.1, // s: even a tiny ride lasts this long
+  rollMaxTime: 40,
+  cartHop: { share: 0.3, min: 1.5, max: 10, maxApex: 1.4 }, // a knock / helper while in the cart: a bump (m) on the sky arc
+  // the toss out of the cart
+  throwMax: 9, // m the rider flies before the first bounce
+  throwPeak: [1.4, 2.8], // m apex: clamp(toss length * throwPeakPerMetre, ...)
+  throwPeakPerMetre: 0.3,
+  throwGravity: 30, // m/s^2
+  flips: [1, 1], // forward somersaults in the toss
+  // tumbling on the asphalt (bounce i is hopDecay^i of the first one)
+  skips: { base: 1, per: 8, min: 2, max: 4 }, // count = base + log2(1 + L / per), L = the metres left after the cart
+  hopDecay: 0.5,
+  hopHeightPerMetre: 0.18,
+  hopHeight: [0.25, 1.2],
+  hopGravity: 42,
+  skipSkill: 1, // Skill per bounce = bounce number x this x Skill per click
+  slide: [1, 3.5], // m skidded face down after the last bounce: clamp(tail * 0.15, ...)
+  slideTime: [0.45, 1.6],
+  // power lines painted across the road: crossing one pays markerSkill x Skill per click
+  markers: [[25, 200], [50, 1000], [100, 3200]], // [spacing m, up to m]
+  markerSkill: 1,
+  // after the ride
+  restTime: 1.9, // s lying on the road with the reward before going back
   milestone: 100, // m between counter chimes
 }
-// The launcher (launcher.js): pressing FLY summons a giant copy of the player's equipped
-// slingshot (or blaster) in front of them, which they shoot from, then it vanishes.
-// scale = x the hand-held model; summon/linger/vanish in s; ahead = m in front of the player.
-export const LAUNCHERS = { scale: 3.4, cannonScale: 3.3, summon: 0.75, linger: 1.3, vanish: 0.4, ahead: 3.4 }
+// Distances (m from the zone line) of the power lines painted across the road.
+export function powerMarks() {
+  const out = []
+  let d = 0
+  for (const [step, upTo] of FLIGHT.markers) while (d + step <= upTo) out.push((d += step))
+  return out
+}
+// The starting gate + cart (cart.js). summon/linger/vanish in s; ahead = m in front of the player.
+export const CART = {
+  summon: 0.7,
+  linger: 1.4,
+  vanish: 0.45,
+  ahead: 4,
+  gateWidth: 3.6, // m between the two posts
+  postHeight: 4.2,
+  seatY: 0.32, // the rider's feet (avatar origin) relative to the cart's ground point while sitting
+  color: '#ff8fe0', // the wire basket and frame
+  colorDark: '#d95fc0',
+  handle: '#ffffff',
+  wheel: '#24262e',
+  gravity: 30, // the loose cart after the throw
+  bounce: 0.32,
+  friction: 1.6,
+}
 
 // --- Lane animals (lane/hazards.js, models in lane/animals*.js, sounds in audio/lane.js) ---
 // While flying, animals appear ahead and try to cut the flight short; the player
@@ -414,6 +473,11 @@ export const LAUNCHERS = { scale: 3.4, cannonScale: 3.3, summon: 0.75, linger: 1
 //   zone  low = only where the flight passes within `reach` m of the slime; any = anywhere
 //   r = hit radius (m), penalty = share of the REMAINING distance lost, weight = spawn odds
 export const LANE = {
+  // OFF (2026-11-13): no animals, helpers or bosses during a launch, so every flight is a
+  // clean sky shot that covers the full Skill distance. With it off flight.js never starts
+  // the lane, the DASH button and the Gear button stay hidden. Everything below is kept
+  // for turning it back on.
+  enabled: false,
   tutorialFlights: 2, // the first flights are animal free
   grace: 40, // m from the zone with no animals
   startDelay: 0.7, // s after release before the first animal
@@ -499,60 +563,106 @@ export const GEAR = [
   { id: 'radar', name: 'Animal Radar', icon: 'radar', desc: 'Warnings show up earlier.', per: 0.14, prices: [1500, 20000, 200000, 2e6] },
 ]
 
-// Regions of the slime river (distance from the zone, m). Each gets its own bank
-// colours and trees, a floating name sign over the river, and its name shows above
-// the flight counter once passed. cliff = [face A, face B], top = checker colours.
+// Regions along the lane (distance from the zone, m): the roadside is built as towns that
+// grow with distance (roadside.js): villages with farms and fields, then rural towns, urban
+// towns and finally big cities (no woods). Each region gets a gate with its name over the
+// road (river.js), and its name shows above the flight counter once passed.
+// town = village | rural | urban | city; ground = checker colours beside the road;
+// walls / roofs / trims = colour pools for the buildings; gate = [pillars, trim].
 export const RIVER_REGIONS = [
-  { at: 0, name: 'Meadow', color: '#7dff7d', cliff: ['#9a6431', '#7a4a22'], top: ['#63e22f', '#4ccf22'], grass: '#5bd62b', trunk: '#6b3f1d', leaves: '#3cc21f', icon: 'leaf' },
-  { at: 200, name: 'Snow', color: '#9fe3ff', cliff: ['#d4e9f7', '#b6d6ee'], top: ['#ffffff', '#eaf6ff'], grass: '#ffffff', trunk: '#5a3a22', leaves: '#f1fbff', icon: 'snow', deco: 'snowman' },
-  { at: 450, name: 'Cosmic', color: '#6a5cff', cliff: ['#e8782a', '#f6efe6'], top: ['#c9ecff', '#b1e0ff'], grass: '#ffffff', trunk: '#3a2430', leaves: '#8a2a3a', icon: 'comet', deco: 'crystal' },
-  { at: 750, name: 'Abyss Ocean', color: '#2f8cff', cliff: ['#1f4fa8', '#173c85'], top: ['#3fd0e0', '#2fb8cc'], grass: '#7ff0ff', trunk: '#2a3a5a', leaves: '#ff7a9a', icon: 'bubble' },
-  { at: 1150, name: 'Lava Lands', color: '#ff6a1f', cliff: ['#3a2a2a', '#2a1c1c'], top: ['#ff6a1f', '#e8501a'], grass: '#ffb21f', trunk: '#1a1010', leaves: '#ffb21f', icon: 'flame', deco: 'crystal' },
-  { at: 1650, name: 'Candy Cove', color: '#ff7ad8', cliff: ['#ff8fd0', '#ffffff'], top: ['#fff07a', '#ffe04a'], grass: '#ff5fa8', trunk: '#ffffff', leaves: '#ff5fa8', icon: 'candy' },
-  { at: 2250, name: 'Sky Temple', color: '#ffd23a', cliff: ['#e8d8a8', '#d4c28a'], top: ['#ffffff', '#f2f2f2'], grass: '#ffd23a', trunk: '#c9a14a', leaves: '#ffe46a', icon: 'sun' },
-  { at: 2800, name: 'Galaxy', color: '#c98cff', cliff: ['#2a1a5a', '#1a0f3a'], top: ['#b45cff', '#9a3cff'], grass: '#6ff0ff', trunk: '#0f0a2a', leaves: '#6ff0ff', icon: 'planet', deco: 'crystal' },
+  { at: 0, name: 'Meadow Village', color: '#7dff7d', icon: 'house', town: 'village', ground: ['#63e22f', '#50d22b'], gate: ['#9a6431', '#ffd23a'], walls: ['#fff4dc', '#ffe0a8', '#f4c48a', '#ffffff', '#ffd6c2'], roofs: ['#d9472b', '#b83a2a', '#6b4a3a', '#3f6fd1'], trims: ['#ffffff', '#6b3f1d'] },
+  { at: 200, name: 'Hillside Village', color: '#b6ff5a', icon: 'house', town: 'village', ground: ['#7ad84a', '#68c93a'], gate: ['#7a4a22', '#ff7a3a'], walls: ['#f7f0e0', '#e8d2b0', '#ffe8b8', '#d8e8ff', '#ffffff'], roofs: ['#2f6b3a', '#c94a2a', '#5a4a8a', '#8a3a2a'], trims: ['#ffffff', '#5a3a22'] },
+  { at: 450, name: 'Rural Town', color: '#ffd23a', icon: 'church', town: 'rural', ground: ['#8fd84a', '#7cc93a'], gate: ['#c94a2a', '#ffffff'], walls: ['#fff1d6', '#f2d9b0', '#d6ecff', '#ffe0e0', '#e8f7d8', '#ffffff'], roofs: ['#4a4f5a', '#a83a2a', '#2f5a8a', '#6b4a3a'], trims: ['#ffffff', '#2f3a4a'] },
+  { at: 750, name: 'Market Town', color: '#ff9a3a', icon: 'church', town: 'rural', ground: ['#a8d870', '#96c95e'], gate: ['#2f5a8a', '#ffd23a'], walls: ['#ffe6c8', '#f0c8a0', '#c8e0f0', '#ffd8a8', '#e8e0ff', '#fff8e8'], roofs: ['#8a3a2a', '#3a4a5a', '#c96a2a', '#2f6b5a'], trims: ['#ffffff', '#3a2a22'] },
+  { at: 1150, name: 'Urban Town', color: '#3fb4ff', icon: 'building', town: 'urban', ground: ['#c9ccd6', '#b9bcc8'], gate: ['#3a4a6a', '#3fb4ff'], walls: ['#c96a4a', '#e8d8c0', '#9aa8b8', '#d8a878', '#f0f0f0', '#8a5a4a', '#b8c8d8'], roofs: ['#4a4f5a', '#6a6f7a', '#3a3f4a'], trims: ['#ffffff', '#2a2f3a'] },
+  { at: 1650, name: 'Uptown', color: '#ff6ad8', icon: 'building', town: 'urban', ground: ['#d6d0dc', '#c6c0cc'], gate: ['#5a3a6a', '#ff6ad8'], walls: ['#e8c8d8', '#d8d8e8', '#f2e2c8', '#a8b8c8', '#c8a888', '#ffffff', '#7a6a8a'], roofs: ['#4a4a5a', '#5a5f6a', '#2f3440'], trims: ['#ffffff', '#2a2a3a'] },
+  { at: 2250, name: 'The City', color: '#5ae8ff', icon: 'city', town: 'city', ground: ['#b8bcc8', '#a8acb8'], gate: ['#2a3a5a', '#5ae8ff'], walls: ['#d8dde6', '#9aa8bc', '#c8b8a0', '#e8e8f0', '#7a8aa0', '#b0c0d8'], roofs: ['#3a3f4a', '#4a4f5a', '#2a2f3a'], trims: ['#e8eef8', '#2a2f3a'] },
+  { at: 2800, name: 'Neon City', color: '#c98cff', icon: 'city', town: 'city', neon: ['#ff4ad8', '#3fe8ff', '#ffe23a', '#7a5cff'], ground: ['#8a8ea0', '#7a7e90'], gate: ['#1a1a3a', '#c98cff'], walls: ['#3a3f5a', '#5a5f7a', '#2a2f4a', '#6a6a8a', '#4a3a6a'], roofs: ['#1f2236', '#2a2d44'], trims: ['#c98cff', '#1a1a2a'] },
 ]
+
+
+// The towns beside the lane (roadside.js). u = distance from the road axis (m). Each town kind
+// has rows of lots (row.kind = the lot builder, row.u = its front line), an optional back street
+// at u = back, and on phones only the first liteRows rows are built.
+export const ROADSIDE = {
+  chunk: 200, // m of lane merged into one set of meshes
+  walk: 35, // the sidewalk runs from the road edge to here
+  far: 260, // the ground runs out to here
+  hubGap: 50, // m with no buildings right after the hub (its cliffs reach over the road banks)
+  street: 9, // cross street width
+  streetEvery: { village: 0, rural: 96, urban: 66, city: 78 },
+  lampEvery: 24,
+  depth: {
+    village: { liteRows: 2, rows: [{ kind: 'cottage', u: 39 }, { kind: 'fields', u: 66, to: 250, ignoreStreets: true }] },
+    rural: { back: 60, liteRows: 3, rows: [{ kind: 'townHouse', u: 39, shops: 0.3 }, { kind: 'backHouse', u: 69 }, { kind: 'fields', u: 96, to: 250 }] },
+    urban: { back: 60, liteRows: 2, rows: [{ kind: 'block', u: 39, floors: [3, 6] }, { kind: 'block', u: 69, floors: [5, 9] }, { kind: 'block', u: 90, floors: [7, 12] }] },
+    city: { back: 64, liteRows: 3, rows: [
+      { kind: 'tower', u: 38, d: [18, 20, 24], w: [18, 24, 30], h: [22, 60], podium: true },
+      { kind: 'tower', u: 74, d: [24], w: [24, 30], h: [35, 100] },
+      { kind: 'tower', u: 104, d: [30], w: [24, 30, 36], h: [60, 150] },
+      { kind: 'tower', u: 140, d: [30], w: [30, 36], h: [40, 120], fill: 0.6 },
+    ] },
+  },
+  // legoMat `windows` for the building walls (houses / flats, glass towers, Neon City towers)
+  windows: {
+    house: { cell: [3, 3], box: [0.28, 0.72, 0.3, 0.78], glass: '#6aaee0', lit: '#ffe39a', litRate: 0.12, glow: 0.3 },
+    tower: { cell: [2, 3.2], box: [0.14, 0.86, 0.2, 0.82], glass: '#3f78b0', lit: '#d8f0ff', litRate: 0.16, glow: 0.3, parapet: 0.2 },
+    night: { cell: [2, 3.2], box: [0.14, 0.86, 0.2, 0.82], glass: '#232c55', lit: '#ffd0f4', litRate: 0.32, glow: 0.6, parapet: 0.2 },
+  },
+  colors: {
+    sidewalk: '#d9dce4', curb: '#f4f4f6', paving: '#c4c0cc', asphalt: '#4a5060', line: '#f2f2f2', pole: '#3a3f4a', lamp: '#fff4c8',
+    brick: '#a84a3a', path: '#e8dcc0', hedge: '#3cae2a', soil: '#8a5a32', hay: '#e8c860', silo: '#c8ccd4', steel: '#9aa3b0', tank: '#8a6a4a',
+    barn: '#c8352a', barnRoof: '#4a4f5a', barnDoor: '#7a3a22', mill: '#fff1d6', gold: '#ffcf3a', churchRoof: '#3a4a6a', window: '#9fdcff', gasRed: '#e8322a',
+    doors: ['#7a3a22', '#2f5a8a', '#c9352a', '#2f6b3a', '#5a3a6a'],
+    flowers: ['#ff5f8a', '#ffd23a', '#ffffff', '#c86aff', '#ff7a2a'],
+    // crop rows: [main, odd, height]
+    crops: [['#ffd84a', '#f2c230', 0.7], ['#4fc23a', '#3a9a2a', 0.5], ['#3aa82a', '#2a8a22', 1.4], ['#ff9a2a', '#4fc23a', 0.6], ['#b06ae8', '#4fc23a', 0.5]],
+    awnings: [['#e83a3a', '#ffffff'], ['#3a8ae8', '#ffffff'], ['#3ac46a', '#ffffff'], ['#ffb21f', '#ffffff'], ['#c86aff', '#ffffff']],
+    signs: ['#ff4a6a', '#3fd0ff', '#ffd23a', '#7aff6a', '#ff8a2a', '#ffffff'],
+    cars: ['#e8322a', '#2f6ad8', '#ffd23a', '#f2f2f2', '#2a2f3a', '#3ac46a', '#ff8a2a'],
+  },
+}
 
 
 // Eggs: price in Wins (or race tokens). chance in %, boost = + skill multiplier.
 // The last pet of each egg is its Secret: a tiny chance, shown as a black silhouette
 // on the egg panel until it has been hatched once (eggs.js).
 export const EGGS = [
-  { id: 'common', name: 'Common Egg', price: 50, x: 10, z: 29, look: 'common', pets: [
+  { id: 'common', name: 'Common Egg', price: 50, x: 11, z: 33.5, look: 'common', pets: [
     { id: 'pup', name: 'Puddle Pup', rarity: 'Common', chance: 44.9979, boost: 0.1, look: { kind: 'dog', body: '#c98a4b', accent: '#f2dcc0' } },
     { id: 'kitty', name: 'Tabby Kit', rarity: 'Common', chance: 30, boost: 0.15, look: { kind: 'cat', body: '#f0a640', accent: '#fff1d6' } },
     { id: 'bunny', name: 'Hop Bunny', rarity: 'Uncommon', chance: 18, boost: 0.25, look: { kind: 'bunny', body: '#f4f4f4', accent: '#ffb6c8' } },
     { id: 'fox', name: 'Ember Fox', rarity: 'Rare', chance: 7, boost: 0.4, look: { kind: 'fox', body: '#ff6a1f', accent: '#ffffff' } },
     { id: 'sunhound', name: 'Sunbeam Hound', rarity: 'Secret', chance: 0.0021, boost: 25, look: { kind: 'dog', body: '#fff3b0', accent: '#ffd23a', glow: '#ffe066', wings: true } },
   ] },
-  { id: 'uncommon', name: 'Uncommon Egg', price: 500, x: 5, z: 25.5, look: 'uncommon', pets: [
+  { id: 'uncommon', name: 'Uncommon Egg', price: 500, x: 5.5, z: 37, look: 'uncommon', pets: [
     { id: 'penguin', name: 'Puffin Pal', rarity: 'Common', chance: 39.9985, boost: 0.5, look: { kind: 'penguin', body: '#24324a', accent: '#ffffff' } },
     { id: 'owl', name: 'Frost Owl', rarity: 'Uncommon', chance: 30, boost: 0.8, look: { kind: 'owl', body: '#b8dcff', accent: '#ffffff', wings: true } },
     { id: 'polar', name: 'Polar Cub', rarity: 'Rare', chance: 20, boost: 1.2, look: { kind: 'bear', body: '#f2f8ff', accent: '#9cc8ff' } },
     { id: 'yeti', name: 'Tiny Yeti', rarity: 'Epic', chance: 10, boost: 2, look: { kind: 'bear', body: '#d9f0ff', accent: '#4aa3ff', horn: true } },
     { id: 'glacier', name: 'Glacier Wyrm', rarity: 'Secret', chance: 0.0015, boost: 60, look: { kind: 'dragon', body: '#e6f8ff', accent: '#5fd0ff', wings: true, glow: '#9fe8ff', spiky: true } },
   ] },
-  { id: 'rare', name: 'Rare Egg', price: 4000, x: -5, z: 25.5, look: 'rare', pets: [
+  { id: 'rare', name: 'Rare Egg', price: 4000, x: -5.5, z: 37, look: 'rare', pets: [
     { id: 'turtle', name: 'Moss Turtle', rarity: 'Uncommon', chance: 39.999, boost: 2.5, look: { kind: 'turtle', body: '#5dbb3a', accent: '#8a5a2b' } },
     { id: 'frog', name: 'Bloom Frog', rarity: 'Rare', chance: 30, boost: 3.5, look: { kind: 'frog', body: '#3fd46a', accent: '#ff7ab8' } },
     { id: 'parrot', name: 'Jungle Parrot', rarity: 'Epic', chance: 20, boost: 5, look: { kind: 'bird', body: '#ff3b3b', accent: '#2f8cff', wings: true } },
     { id: 'chameleon', name: 'Prism Chameleon', rarity: 'Legendary', chance: 10, boost: 8, look: { kind: 'lizard', body: '#22d3a8', accent: '#ffd23a' } },
     { id: 'jadewyrm', name: 'Jade Leviathan', rarity: 'Secret', chance: 0.001, boost: 150, look: { kind: 'lizard', body: '#1fbf6a', accent: '#ffe46a', glow: '#5fffa0', spiky: true } },
   ] },
-  { id: 'rainbow', name: 'Rainbow Egg', price: 25000, x: -10, z: 29, look: 'rainbow', pets: [
+  { id: 'rainbow', name: 'Rainbow Egg', price: 25000, x: -11, z: 33.5, look: 'rainbow', pets: [
     { id: 'unicorn', name: 'Candy Unicorn', rarity: 'Rare', chance: 44.9992, boost: 12, look: { kind: 'horse', body: '#ffffff', accent: '#ff8fd8', horn: true } },
     { id: 'rcat', name: 'Spectrum Cat', rarity: 'Epic', chance: 30, boost: 18, look: { kind: 'cat', body: '#b07bff', accent: '#6ff0ff', glow: '#ff9cf5' } },
     { id: 'pdragon', name: 'Prism Drake', rarity: 'Legendary', chance: 20, boost: 30, look: { kind: 'dragon', body: '#5ad8ff', accent: '#ff6bd5', wings: true, glow: '#88ffff' } },
     { id: 'phoenix', name: 'Aurora Phoenix', rarity: 'Mythic', chance: 5, boost: 50, look: { kind: 'bird', body: '#ff9a1f', accent: '#ffe14a', wings: true, glow: '#ffb347' } },
     { id: 'starmane', name: 'Starmane Pegasus', rarity: 'Secret', chance: 0.0008, boost: 400, look: { kind: 'horse', body: '#fdf6ff', accent: '#b45cff', horn: true, wings: true, glow: '#e6a8ff' } },
   ] },
-  { id: 'exclusive', name: 'Exclusive Egg', price: 250000, x: -13, z: -31, look: 'exclusive', pets: [
+  { id: 'exclusive', name: 'Exclusive Egg', price: 250000, x: 0, z: 39.5, look: 'exclusive', pets: [
     { id: 'gryphon', name: 'Ruby Gryphon', rarity: 'Legendary', chance: 49.9995, boost: 80, look: { kind: 'bird', body: '#e8303a', accent: '#ffd23a', wings: true, glow: '#ff5050' } },
     { id: 'sdragon', name: 'Sapphire Wyrm', rarity: 'Mythic', chance: 35, boost: 120, look: { kind: 'dragon', body: '#2a6bff', accent: '#9ff3ff', wings: true, glow: '#44aaff' } },
     { id: 'lion', name: 'Crown Lion', rarity: 'Mythic', chance: 15, boost: 200, look: { kind: 'cat', body: '#ffc93a', accent: '#ff7a1a', mane: true, glow: '#ffd700' } },
     { id: 'voidking', name: 'Void Monarch', rarity: 'Secret', chance: 0.0005, boost: 1500, look: { kind: 'dragon', body: '#2a1450', accent: '#c98cff', wings: true, glow: '#9a5cff', spiky: true } },
   ] },
-  { id: 'race', name: 'Race Egg', price: 10, currency: 'tokens', x: 13, z: -31, look: 'race', pets: [
+  { id: 'race', name: 'Race Egg', price: 10, currency: 'tokens', x: 13, z: -19, look: 'race', pets: [
     { id: 'snail', name: 'Turbo Snail', rarity: 'Rare', chance: 49.998, boost: 3, look: { kind: 'snail', body: '#ffcf5a', accent: '#a05ad8' } },
     { id: 'rabbit', name: 'Rocket Rabbit', rarity: 'Epic', chance: 35, boost: 6, look: { kind: 'bunny', body: '#d8c2ff', accent: '#7a3cff' } },
     { id: 'cheetah', name: 'Nitro Cheetah', rarity: 'Legendary', chance: 15, boost: 12, look: { kind: 'cat', body: '#ffd34a', accent: '#3a2a12', glow: '#ffef7a' } },
@@ -561,8 +671,8 @@ export const EGGS = [
 ]
 // Single pets sold on stands (the stock line is flavour text).
 export const STAND_PETS = [
-  { id: 'captain', name: 'Captain Quackers', rarity: 'Mythic', boost: 300, price: 750000, stock: 1000, better: '200%', x: -20.5, z: -21.5, look: { kind: 'duck', body: '#ffd83a', accent: '#ff8a1a', hat: true } },
-  { id: 'seraph', name: 'Radiant Seraph', rarity: 'Secret', boost: 1200, price: 5000000, stock: 10000, better: '1200%', x: 0, z: 31, look: { kind: 'dragon', body: '#fff6dc', accent: '#ffd23a', wings: true, glow: '#ffe066', spiky: true } },
+  { id: 'captain', name: 'Captain Quackers', rarity: 'Mythic', boost: 300, price: 750000, stock: 1000, better: '200%', x: -13.5, z: -7.5, look: { kind: 'duck', body: '#ffd83a', accent: '#ff8a1a', hat: true } },
+  { id: 'seraph', name: 'Radiant Seraph', rarity: 'Secret', boost: 1200, price: 5000000, stock: 10000, better: '1200%', x: -10.5, z: 1.5, look: { kind: 'dragon', body: '#fff6dc', accent: '#ffd23a', wings: true, glow: '#ffe066', spiky: true } },
 ]
 export const RARITY_COLORS = { Common: '#c9d3df', Uncommon: '#5ee35e', Rare: '#3fa2ff', Epic: '#b45cff', Legendary: '#ffb21f', Mythic: '#ff4f8b', Secret: '#ffffff' }
 export const PET_SLOTS = 3 // equipped at once (+1 with the Extra Slot pass)
@@ -583,22 +693,28 @@ export const EGG_HATCH = {
   autoGap: 0.25, // s between auto batches
 }
 
-// Trails behind the player while flying. mult = Wins multiplier while equipped.
-// card = the Trails window card gradient (top, bottom); colors = the flight ribbon + card swoosh.
-// The first two were premium items in the reference: here they cost Wins like everything else.
+// Trails behind the player while flying (the Trails window, a list of cart-shop themed trails).
+// mult = Wins multiplier while equipped; emblem = the item drawn on the card art (icons.js trailCardURL);
+// card = the card gradient; colors = the flight ribbon. `premium` ones were premium-currency items in the
+// reference: here they cost Wins like everything else, priced a bit above the trail of the same boost.
+// `daily` = only from that Daily Reward day (not for sale).
 export const TRAILS = [
-  { id: 'rainbow', name: 'Rainbow Trail', mult: 2, price: 4e6, card: ['#ff7a8a', '#ffd25a', '#7dff9a', '#6ad0ff', '#c98cff'], colors: ['#ff3b3b', '#ffb21f', '#ffef3a', '#3cff6a', '#3fa2ff', '#b45cff'], premium: true },
-  { id: 'void', name: 'Void Trail', mult: 3, price: 10e6, card: ['#a46aff', '#4a1a8a'], colors: ['#14062a', '#5a1fc8', '#b07bff', '#2a0a5a'], premium: true },
-  { id: 'white', name: 'White Trail', mult: 1.2, price: 300, card: ['#f4f6f8', '#b9c2cc'], colors: ['#ffffff', '#e4ebf2', '#c9d3df'] },
-  { id: 'red', name: 'Red Trail', mult: 1.3, price: 1500, card: ['#ff8a8a', '#d23a3a'], colors: ['#ffffff', '#ff4a4a', '#b0121a'] },
-  { id: 'blue', name: 'Blue Trail', mult: 1.4, price: 6000, card: ['#7fe0ff', '#2a7fe8'], colors: ['#ffffff', '#3fb4ff', '#1a4fd8'] },
-  { id: 'green', name: 'Green Trail', mult: 1.45, price: 20000, card: ['#9cff7a', '#2fae3a'], colors: ['#ffffff', '#5aff4a', '#1a9a2a'] },
-  { id: 'yellow', name: 'Yellow Trail', mult: 1.5, price: 60000, card: ['#fff27a', '#d8b01a'], colors: ['#ffffff', '#ffe03a', '#ff9a12'] },
-  { id: 'purple', name: 'Purple Trail', mult: 1.6, price: 150000, card: ['#d9a8ff', '#7a46d8'], colors: ['#ffffff', '#d05aff', '#7a1ad8'] },
-  { id: 'inferno', name: 'Inferno Trail', mult: 1.7, price: 400000, card: ['#ffc65a', '#d8461a'], colors: ['#fff27a', '#ff8a1a', '#e8221a', '#5a0a0a'] },
-  { id: 'diamond', name: 'Diamond Trail', mult: 1.8, price: 1e6, card: ['#a8f6ff', '#ff8fd8'], colors: ['#ffffff', '#5ae8ff', '#ff4fc8', '#1a2a6a'] },
-  { id: 'celestial', name: 'Celestial Trail', mult: 1.9, price: 2.5e6, card: ['#6a9cff', '#16245a'], colors: ['#ffffff', '#3f8cff', '#0a1a6a', '#5ad8ff'] },
+  { id: 'receipt', name: 'Receipt Trail', mult: 1.2, price: 10e3, emblem: 'receipt', card: ['#e9e6df', '#b7b2a8'], colors: ['#ffffff', '#ece8e0', '#b7b2a8'] },
+  { id: 'bubblewrap', name: 'Bubble Wrap Trail', mult: 1.3, price: 200e3, emblem: 'bubble', card: ['#a8dcff', '#4f9ae0'], colors: ['#ffffff', '#cfeeff', '#7cc4ff'] },
+  { id: 'banana', name: 'Banana Peel Trail', mult: 1.4, price: 3e6, emblem: 'banana', card: ['#f4d65a', '#c8a21a'], colors: ['#fff6a8', '#ffe03a', '#b8901a'] },
+  { id: 'megasale', name: 'Mega Sale Trail', mult: 1.5, price: 40e6, emblem: 'tag', card: ['#ff5a6a', '#c81a2a'], colors: ['#ffffff', '#ff3b4a', '#a8121e'] },
+  { id: 'soda', name: 'Soda Fizz Trail', mult: 1.6, price: 500e6, emblem: 'soda', card: ['#c47aff', '#7a2ad8'], colors: ['#f2d8ff', '#b45cff', '#5a14b0'] },
+  { id: 'hotsauce', name: 'Hot Sauce Trail', mult: 1.7, price: 6e9, emblem: 'chili', card: ['#ff8a3a', '#d8461a'], colors: ['#ffe03a', '#ff7a1a', '#e8221a'] },
+  { id: 'goldcoin', name: 'Gold Coin Trail', mult: 1.8, price: 75e9, emblem: 'coin', card: ['#f4cf4a', '#c8941a'], colors: ['#fff6c0', '#ffd23a', '#c88a12'] },
+  { id: 'laser', name: 'Checkout Laser Trail', mult: 1.9, price: 900e9, emblem: 'barcode', card: ['#b03a4a', '#6a1424'], colors: ['#ffffff', '#ff2a3a', '#5a0a14'] },
+  { id: 'disco', name: 'Disco Cart Trail', mult: 2, price: 2e12, emblem: 'disco', premium: true, card: ['#ff6a6a', '#ffd25a', '#7dff9a', '#6ad0ff', '#e88cff'], colors: ['#ff3b3b', '#ffb21f', '#ffef3a', '#3cff6a', '#3fa2ff', '#b45cff'] },
+  { id: 'diamondcard', name: 'Diamond Card Trail', mult: 2.2, price: 12e12, emblem: 'card', card: ['#7fd0ff', '#2a6fd8'], colors: ['#ffffff', '#9fe8ff', '#3f8cff'] },
+  { id: 'cosmic', name: 'Cosmic Cart Trail', mult: 2.5, price: 150e12, emblem: 'cart', card: ['#8a5cff', '#2a1470'], colors: ['#1a0a4a', '#5a2ad8', '#c98cff', '#ffffff'] },
+  { id: 'blackfriday', name: 'Black Friday Trail', mult: 3, price: 400e12, emblem: 'bag', premium: true, card: ['#6a4a2a', '#2a1a10'], colors: ['#14100a', '#4a3a24', '#ffd23a'] },
+  { id: 'clover', name: 'Lucky Clover Trail', mult: 1.5, daily: 7, emblem: 'clover', card: ['#7ddc5a', '#2f9a2a'], colors: ['#e0ffc0', '#5aff4a', '#1a9a2a'] },
 ]
+// Old trail ids -> the trail with the same (or the next) boost, so saves keep what they bought.
+export const TRAIL_RENAMES = { white: 'receipt', red: 'bubblewrap', blue: 'banana', green: 'megasale', yellow: 'megasale', purple: 'soda', inferno: 'hotsauce', diamond: 'goldcoin', celestial: 'laser', rainbow: 'disco', void: 'blackfriday' }
 export const DEFAULT_TRAIL_COLORS = ['#ffffff', '#cfe9ff'] // flight ribbon with no trail equipped
 
 // Shop: passes and packs, all for Wins.
@@ -610,45 +726,46 @@ export const PASSES = [
 ]
 export const SKILL_PACKS = [
   { id: 'p1', amount: 1800, price: 150, style: 'gold' },
-  { id: 'p2', amount: 18000, price: 1200, style: 'blue' },
+  { id: 'p2', amount: 18000, price: 1200, style: 'red' },
   { id: 'p3', amount: 180000, price: 9000, style: 'rainbow' },
 ]
 
-// Boost potions: using one adds `minutes` of x`mult` (stacks time). icon = icons.js painter.
+// Boost potions (Inventory > Potions): using one adds `minutes` of x`mult` (stacks time). icon = icons.js
+// painter. The reference sold 3-packs for premium currency: here `pack3` Wins buys three.
 export const BOOSTS = {
-  skill: { name: 'Skill Boost', mult: 2, minutes: 10, icon: 'potionSkill', color: '#5fe0ff' },
-  wins: { name: 'Win Boost', mult: 2, minutes: 10, icon: 'potionWins', color: '#ffd23a' },
-  luck: { name: 'Luck Boost', mult: 2, minutes: 10, icon: 'potionLuck', color: '#7dff5a' },
+  skill: { name: 'Power Potion', short: 'POWER', mult: 2, minutes: 5, icon: 'starSkill', color: '#5fc8ff', card: ['#4fb4ff', '#1f6fd8'], pack3: 7500 },
+  wins: { name: 'Wins Potion', short: 'WINS', mult: 2, minutes: 5, icon: 'starWins', color: '#ffd23a', card: ['#ffd84a', '#e0a012'], pack3: 10000 },
+  luck: { name: 'Luck Potion', short: 'LUCK', mult: 2, minutes: 5, icon: 'starLuck', color: '#7dff5a', card: ['#5fdc4a', '#239a2a'], pack3: 7500 },
 }
 
 // Daily Rewards: one more day unlocks every new local calendar day (capped at 7);
 // once all 7 are claimed the next day starts the cycle again at day 1. Day 7 gives
-// the limited Galaxy Cannon (or `again` if it is already owned).
+// the limited Lucky Clover Trail (or `again` if it is already owned).
 export const DAILY = [
   { boost: 'skill', n: 1 },
-  { pet: 'samurai' },
+  { pet: 'luckycat' },
   { boost: 'wins', n: 1 },
   { boost: 'luck', n: 2 },
   { boost: 'skill', n: 3 },
   { boost: 'wins', n: 3 },
-  { sling: 'galaxy', again: [{ boost: 'skill', n: 3 }, { boost: 'wins', n: 3 }, { boost: 'luck', n: 3 }] },
+  { trail: 'clover', again: [{ boost: 'skill', n: 3 }, { boost: 'wins', n: 3 }, { boost: 'luck', n: 3 }] },
 ]
 
-// Playtime Rewards: minutes played this session. skill / wins are x(rebirths + 1).
-// egg = a free hatch of that egg; boost = one potion.
+// Playtime Rewards: minutes played this session. skill (Power) / wins are x(rebirths + 1).
+// egg = a free hatch of that egg; boost = one potion; dice = one aura die (Auras window).
 export const PLAYTIME = [
   { at: 1, skill: 750 },
   { at: 3, wins: 25 },
   { at: 5, egg: 'common' },
   { at: 7, boost: 'skill' },
   { at: 10, wins: 75 },
-  { at: 12, skill: 1500 },
+  { at: 12, dice: 'gold' },
   { at: 15, boost: 'wins' },
   { at: 30, egg: 'uncommon' },
   { at: 45, boost: 'luck' },
-  { at: 65, wins: 200 },
-  { at: 85, skill: 3000 },
-  { at: 105, egg: 'rare' },
+  { at: 55, dice: 'gold' },
+  { at: 70, skill: 3000 },
+  { at: 90, egg: 'exclusive' },
 ]
 export const CHEST = { cooldown: 10 * 60, wins: 25 } // s; Wins x (rebirths + 1)
 // Friend Boost: every friend who joins the game from this player's invite (link or direct Bloxity invite;
@@ -659,6 +776,11 @@ export const FRIEND_BOOST = { per: 0.1, max: 10 }
 export const LIMITED_SLINGSHOTS = [{ id: 'galaxy', name: 'Galaxy Cannon', skill: 2500, style: 'galaxy' }]
 export const LIMITED_PETS = [
   { id: 'samurai', name: 'Samurai Cat', rarity: 'Legendary', boost: 10, source: 'Daily Reward', look: { kind: 'cat', body: '#ffffff', accent: '#ff8a3a', samurai: true } },
+  { id: 'luckycat', name: 'Lucky Cat', rarity: 'Legendary', boost: 10, source: 'Daily Reward', look: { kind: 'cat', body: '#ffffff', accent: '#ff3b4a', glow: '#ffd23a' } },
+  // Rebirth milestone pets (REBIRTH_MILESTONES): `vsBest` = always this much better than your best other pet.
+  { id: 'msdragon', name: 'Milestone Dragon', rarity: 'Mythic', boost: 1, vsBest: 1, source: 'Rebirth 5 Milestone', look: { kind: 'dragon', body: '#c9a8ff', accent: '#ffd23a', wings: true, glow: '#d8b8ff' } },
+  { id: 'msphoenix', name: 'Milestone Phoenix', rarity: 'Mythic', boost: 2, vsBest: 1.5, source: 'Rebirth 15 Milestone', look: { kind: 'bird', body: '#ff7a3a', accent: '#ffe14a', wings: true, glow: '#ffb347' } },
+  { id: 'mstitan', name: 'Milestone Titan', rarity: 'Secret', boost: 3, vsBest: 2, source: 'Rebirth 30 Milestone', look: { kind: 'dragon', body: '#2a1450', accent: '#5ad8ff', wings: true, glow: '#7fe8ff', spiky: true } },
 ]
 
 // Pet tiers: every hatch has a small chance (%, x luck) to come out Golden or Diamond.
@@ -713,7 +835,115 @@ export const GAME_SETTINGS = [
   { key: 'hatchAnim', label: 'Hatch Animation', def: true },
 ]
 
+// Rebirth milestones (the Rebirth window's bottom strip): reaching `at` rebirths gives that pet once.
+export const REBIRTH_MILESTONES = [
+  { at: 5, pet: 'msdragon' },
+  { at: 15, pet: 'msphoenix' },
+  { at: 30, pet: 'mstitan' },
+]
+
+// Auras (the Auras window: roll for one, Inventory > Auras to equip). n = 1 in n base chance; power /
+// wins = x multipliers on Power (Skill) gain and Wins while equipped; colors = the glow around the player
+// and the name gradient. Rolling walks from the rarest down: an aura hits with luck / n, else Dust.
+export const AURAS = [
+  { id: 'dust', name: 'Dust', n: 2, power: 1.05, wins: 1, colors: ['#e2d3b0', '#a8946a'] },
+  { id: 'pebble', name: 'Pebble', n: 4, power: 1.1, wins: 1, colors: ['#d0d6de', '#7a8490'] },
+  { id: 'breeze', name: 'Breeze', n: 8, power: 1.15, wins: 1.05, colors: ['#d8fbff', '#6fd8ff'] },
+  { id: 'spark', name: 'Spark', n: 16, power: 1.25, wins: 1.05, colors: ['#fff27a', '#ffb21f'] },
+  { id: 'bubble', name: 'Bubble', n: 32, power: 1.35, wins: 1.1, colors: ['#9fe8ff', '#ff9cf5'] },
+  { id: 'ember', name: 'Ember', n: 64, power: 1.5, wins: 1.1, colors: ['#ffc05a', '#ff3b1f'] },
+  { id: 'frost', name: 'Frost', n: 128, power: 1.65, wins: 1.15, colors: ['#f0fbff', '#5fb4ff'] },
+  { id: 'thunder', name: 'Thunder', n: 300, power: 1.8, wins: 1.2, colors: ['#fff7a8', '#7a5cff'] },
+  { id: 'toxic', name: 'Toxic', n: 650, power: 2, wins: 1.25, colors: ['#c8ff5a', '#2fbf3a'] },
+  { id: 'solar', name: 'Solar Flare', n: 1500, power: 2.25, wins: 1.3, colors: ['#ffe46a', '#ff6a1a'] },
+  { id: 'lunar', name: 'Lunar', n: 3000, power: 2.5, wins: 1.35, colors: ['#eef2ff', '#8a9cff'] },
+  { id: 'prism', name: 'Prism', n: 6000, power: 3, wins: 1.45, colors: ['#ff7ad0', '#5ad8ff'] },
+  { id: 'comet', name: 'Comet', n: 12000, power: 3.5, wins: 1.6, colors: ['#bfe6ff', '#3a5fe8'] },
+  { id: 'aurora', name: 'Northern Lights', n: 30000, power: 4.5, wins: 1.8, colors: ['#5affc8', '#b45cff'] },
+  { id: 'bloodmoon', name: 'Blood Moon', n: 80000, power: 6, wins: 2, colors: ['#ff4a4a', '#8a0a1a'] },
+  { id: 'nebula', name: 'Nebula', n: 120000, power: 7, wins: 2.5, colors: ['#d8a0ff', '#ff5ad8'] },
+  { id: 'kaleido', name: 'Kaleidoscope', n: 200000, power: 8, wins: 3, colors: ['#ff5a5a', '#ffd23a', '#5aff7a', '#5ab4ff'] },
+  { id: 'colossus', name: 'Colossus', n: 500000, power: 10, wins: 4, colors: ['#ffe7a0', '#c88a12'] },
+  { id: 'supernova', name: 'Supernova', n: 750000, power: 12, wins: 5, colors: ['#ffffff', '#ffb21f'] },
+  { id: 'bigbang', name: 'Big Bang', n: 1000000, power: 15, wins: 6, colors: ['#ff5ad8', '#5ad8ff', '#ffffff'] },
+]
+// The four roll buttons: `luck` x the player's own luck. Gold / Diamond / Cosmic were premium dice in the
+// reference: each uses one owned die (Playtime Rewards, quests) or costs `price` Wins.
+export const AURA_ROLLS = [
+  { id: 'roll', name: 'Roll', luck: 1, price: 200 },
+  { id: 'gold', name: 'Gold', luck: 100, price: 25000 },
+  { id: 'diamond', name: 'Diamond', luck: 1000, price: 150000 },
+  { id: 'cosmic', name: 'Cosmic', luck: 10000, price: 500000 },
+]
+// Permanent aura luck upgrades (premium passes in the reference, Wins here). Owned ones multiply.
+export const AURA_PASSES = [
+  { id: 'auraLuck2', mult: 2, price: 60000 },
+  { id: 'auraLuck3', mult: 3, price: 200000 },
+]
+// Auto Roll: one basic Roll every `every` s while on (paid as usual, stops when Wins run out).
+export const AURA_AUTO = { every: 1.2 }
+// The Luck Event (HUD "NEXT EVENT"): every `every` minutes of the wall clock (so every player shares it)
+// aura rolls get x`mult` luck for `lasts` minutes.
+export const AURA_EVENT = { every: 20, lasts: 3, mult: 2 }
+
+// Quests (the HUD's QUESTS panel): QUEST_COUNT at a time from this pool, handed out in order (skipping
+// ones already done). kind: oneFlight = metres in one launch; carts = carts owned; the rest count up
+// from when the quest was given (flights, hatched, rolls, dodges, trains, chests, rebirths).
+export const QUEST_COUNT = 3
+export const QUESTS = [
+  { id: 'fly300', text: 'Fly 300 m in one launch', kind: 'oneFlight', n: 300, reward: { boost: 'skill', n: 1 } },
+  { id: 'hatch5', text: 'Hatch 5 pets', kind: 'hatched', n: 5, reward: { boost: 'luck', n: 1 } },
+  { id: 'carts4', text: 'Own 4 carts', kind: 'carts', n: 4, reward: { boost: 'wins', n: 1 } },
+  { id: 'roll25', text: 'Roll 25 auras', kind: 'rolls', n: 25, reward: { dice: 'gold', n: 1 } },
+  { id: 'fly1000', text: 'Fly 1,000 m in one launch', kind: 'oneFlight', n: 1000, reward: { boost: 'skill', n: 2 } },
+  { id: 'launch10', text: 'Launch 10 times', kind: 'flights', n: 10, reward: { boost: 'wins', n: 1 } },
+  { id: 'train300', text: 'Train 300 times', kind: 'trains', n: 300, reward: { boost: 'skill', n: 1 } },
+  { id: 'launch25', text: 'Launch 25 times', kind: 'flights', n: 25, reward: { boost: 'luck', n: 1 } },
+  { id: 'carts7', text: 'Own 7 carts', kind: 'carts', n: 7, reward: { dice: 'gold', n: 1 } },
+  { id: 'hatch50', text: 'Hatch 50 pets', kind: 'hatched', n: 50, reward: { dice: 'gold', n: 2 } },
+  { id: 'chest3', text: 'Open the rewards chest 3 times', kind: 'chests', n: 3, reward: { boost: 'wins', n: 2 } },
+  { id: 'rebirth1', text: 'Rebirth once', kind: 'rebirths', n: 1, reward: { boost: 'skill', n: 3 } },
+  { id: 'fly2000', text: 'Fly 2,000 m in one launch', kind: 'oneFlight', n: 2000, reward: { dice: 'gold', n: 3 } },
+  { id: 'roll250', text: 'Roll 250 auras', kind: 'rolls', n: 250, reward: { boost: 'luck', n: 3 } },
+  { id: 'launch100', text: 'Launch 100 times', kind: 'flights', n: 100, reward: { dice: 'gold', n: 2 } },
+]
+// The area name shown at the top of the screen.
+export const AREA_NAME = 'Suburbia'
+
 export const WORLD2_SKILL = 600e6
+
+// --- The hub (src/hub/): what PLAZA / FLY_ZONE / CHANNEL / SPAWN above don't cover ----------------
+export const HUB = {
+  portal: { x: -18, z: -12 }, // the WORLDS portal (the World 2 gate)
+  treadmillRun: 6.5, // m/s the avatar's run animation plays at on a treadmill belt
+  colors: {
+    path: '#cbc5fa',
+    rim: '#8a6cf0',
+    greenA: '#63e23a',
+    greenB: '#50d22b',
+    cliffA: '#c45d2a',
+    cliffB: '#93391b',
+    grass: '#5bd62b',
+    yellowA: '#ffd84a',
+    yellowB: '#ffc727',
+    water: '#3fe2ff',
+  },
+}
+// The "Possible Launches" board by the launch zone (odds shown, not rolled yet).
+export const HUB_LAUNCH_TYPES = [
+  { name: 'NORMAL', desc: 'A regular launch', color: '#ffffff', rarity: 'COMMON', odds: '99%', pill: '#9aa1aa' },
+  { name: 'MAX POWER', desc: 'x1.2 distance, x3 Wins', color: '#ff5a3a', rarity: 'RARE', odds: '1 in 100', pill: '#ff7a1f' },
+  { name: 'THUNDERSTRIKE', desc: 'x4 distance, x10 Wins', color: '#3fb4ff', rarity: 'LEGENDARY', odds: '1 in 1,000', pill: '#1f8fff' },
+  { name: 'COSMIC', desc: 'x10 distance, x100 Wins', color: '#ff6af0', rarity: 'MYTHICAL', odds: '1 in 10,000', pill: '#e83ad8' },
+]
+// Stage boards (south), left -> right as you face them: [title, stat, column]. The server ranks
+// bestSkill/playTime/level/wins (it has no rebirth board yet, so Level stands in for it).
+export const HUB_BOARDS = [
+  ['Top Level', 'level', 'LEVEL'],
+  ['Top Wins', 'wins', 'WINS'],
+  ['Top Power', 'bestSkill', 'POWER'],
+  ['Top Time Played', 'playTime', 'TIME'],
+]
 // Training (game.js train(), feedback in training.js + audio/training.js).
 export const TRAIN = {
   interval: 0.16, // s between training clicks while held
@@ -737,5 +967,4 @@ export const TRAIN = {
   hopClear: 0.9, // m the hop clears the table top by
   hopSpeed: 4, // m/s inward on the hop so you land on the table
   // glow / sparks colour per training table style
-  tableColors: { target: '#ffd23a', cloud: '#7ff6ff', leaf: '#7dff7d', frost: '#bff4ff', lava: '#ff7a1a', void: '#c46aff', gold: '#fff2a0' },
 }

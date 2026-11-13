@@ -1,5 +1,11 @@
 import {
+  AURAS,
+  AURA_EVENT,
+  AURA_PASSES,
   BOOSTS,
+  QUESTS,
+  QUEST_COUNT,
+  TRAIL_RENAMES,
   DAILY,
   EGGS,
   EXTRA_SLOT_PRICES,
@@ -58,8 +64,15 @@ const DEFAULT = () => ({
   boostLeft: { skill: 0, wins: 0, luck: 0 }, // s of active boost left
   daily: { unlocked: 0, last: -1, claimed: [] }, // days unlocked this cycle, local day index of the last unlock
   title: 'newbie',
+  auras: [], // owned aura ids (AURAS)
+  aura: '', // equipped aura ('' = none)
+  dice: { gold: 0, diamond: 0, cosmic: 0 }, // aura dice owned
+  milestones: [], // rebirth milestone pets already given (REBIRTH_MILESTONES)
+  quests: [], // active quests { id, base, best } (QUESTS)
+  questNext: 0, // where the quest pool rotation continues
+  questsDone: 0,
   gear: {}, // Flight Gear levels by GEAR id (config.js)
-  stats: { hatched: 0, mythics: 0, longFlights: 0, dailyClaims: 0, chests: 0, spent: 0, dodges: 0, closeCalls: 0, laneHits: 0, boosts: 0 },
+  stats: { hatched: 0, mythics: 0, longFlights: 0, dailyClaims: 0, chests: 0, spent: 0, dodges: 0, closeCalls: 0, laneHits: 0, boosts: 0, trains: 0, rolls: 0 },
   settings: Object.fromEntries(GAME_SETTINGS.map((s) => [s.key, s.def])),
 })
 
@@ -79,9 +92,14 @@ function load() {
 function migrate(saved) {
   const d = DEFAULT()
   const s = { ...d, ...saved, claimedGifts: [] }
-  for (const k of ['potions', 'boostLeft', 'daily', 'stats', 'settings', 'gear']) s[k] = { ...d[k], ...(saved[k] ?? {}) }
+  for (const k of ['potions', 'boostLeft', 'daily', 'stats', 'settings', 'gear', 'dice']) s[k] = { ...d[k], ...(saved[k] ?? {}) }
   s.pets = (s.pets ?? []).filter((p) => petById(p.id)).map((p) => ({ ...p, tier: p.tier ?? '' }))
-  s.trails = (s.trails ?? []).filter((id) => TRAILS.some((t) => t.id === id))
+  // trails renamed with the cart-shop trail list: keep what was bought
+  if (TRAIL_RENAMES[s.trail]) s.trail = TRAIL_RENAMES[s.trail]
+  s.trails = [...new Set((s.trails ?? []).map((id) => TRAIL_RENAMES[id] ?? id))].filter((id) => TRAILS.some((t) => t.id === id))
+  s.auras = (s.auras ?? []).filter((id) => AURAS.some((a) => a.id === id))
+  if (!s.auras.includes(s.aura)) s.aura = ''
+  s.quests = (s.quests ?? []).filter((q) => QUESTS.some((x) => x.id === q?.id))
   if (!s.trails.includes(s.trail)) s.trail = ''
   if (!TITLES.some((t) => t.id === s.title)) s.title = 'newbie'
   s.v = 2
@@ -180,6 +198,8 @@ export const ALL_SLINGSHOTS = [...SLINGSHOTS, ...LIMITED_SLINGSHOTS]
 export const slingById = (id) => ALL_SLINGSHOTS.find((s) => s.id === id)
 export const trailById = (id) => TRAILS.find((t) => t.id === id)
 export const titleById = (id) => TITLES.find((t) => t.id === id)
+export const auraById = (id) => AURAS.find((a) => a.id === id)
+export const questById = (id) => QUESTS.find((q) => q.id === id)
 export const hasPass = (id) => !!state.passes[id]
 export const passById = (id) => PASSES.find((p) => p.id === id)
 // Pet look with the tier's colours (golden / diamond).
@@ -228,7 +248,24 @@ export const petStorage = () => PET_STORAGE.base + PET_STORAGE.step * state.stor
 export const nextStoragePrice = () => PET_STORAGE.prices[state.storageBuys] ?? null
 export const boostActive = (kind) => state.boostLeft[kind] > 0
 export const boostMult = (kind) => (boostActive(kind) ? BOOSTS[kind].mult : 1)
-export const petPower = (p) => (petById(p.id)?.boost ?? 0) * tierById(p.tier).mult
+// A milestone pet (`vsBest`) is always that much better than the best other pet you own.
+let bestKey = ''
+let bestBase = 0
+function bestOtherPower() {
+  const key = `${state.nextUid}:${state.pets.length}`
+  if (key !== bestKey) {
+    bestKey = key
+    bestBase = 0
+    for (const q of state.pets) if (!petById(q.id)?.vsBest) bestBase = Math.max(bestBase, (petById(q.id)?.boost ?? 0) * tierById(q.tier).mult)
+  }
+  return bestBase
+}
+export function petPower(p) {
+  const d = petById(p.id)
+  if (!d) return 0
+  const base = d.vsBest ? Math.max(d.boost, bestOtherPower() * (1 + d.vsBest)) : d.boost
+  return base * tierById(p.tier).mult
+}
 export function petBoost() {
   let b = 0
   for (const p of state.pets) if (p.equipped) b += petPower(p)
@@ -237,7 +274,12 @@ export function petBoost() {
 // Flight Gear (config GEAR, the Gear window): level 0 = not bought.
 export const gearLevel = (id) => Math.max(0, Math.floor(state.gear?.[id] ?? 0))
 export const trailMult = () => trailById(state.trail)?.mult ?? 1
-export const winsMult = () => trailMult() * (hasPass('wins2x') ? 2 : 1) * (1 + titleBonus('wins')) * boostMult('wins')
+// The equipped aura (Inventory > Auras): x Power and x Wins.
+export const auraPower = () => auraById(state.aura)?.power ?? 1
+export const auraWins = () => auraById(state.aura)?.wins ?? 1
+// The cart you ride: +fly % launch distance (flight.js flightDistance).
+export const flyMult = () => 1 + (slingById(state.equippedSling)?.fly ?? 0) / 100
+export const winsMult = () => trailMult() * (hasPass('wins2x') ? 2 : 1) * (1 + titleBonus('wins')) * boostMult('wins') * auraWins()
 export const indexLuck = () => state.indexClaims * INDEX_LUCK.pct
 export const luckMult = () => (1 + titleBonus('luck') + indexLuck()) * boostMult('luck')
 export function platformUnlocked(p) {
@@ -252,7 +294,7 @@ export const friends = { joined: 0, sent: 0, guest: false }
 export const friendBoost = () => Math.min(friends.joined, FRIEND_BOOST.max) * FRIEND_BOOST.per
 export function skillPerClick(platformMult = 1) {
   const sl = slingById(state.equippedSling) ?? SLINGSHOTS[0]
-  return sl.skill * platformMult * rebirthMult() * petBoost() * (hasPass('skill2x') ? 2 : 1) * (1 + titleBonus('skill')) * (1 + friendBoost()) * boostMult('skill')
+  return sl.skill * platformMult * rebirthMult() * petBoost() * (hasPass('skill2x') ? 2 : 1) * (1 + titleBonus('skill')) * (1 + friendBoost()) * boostMult('skill') * auraPower()
 }
 export const nextRebirthCost = () => rebirthCost(state.rebirths)
 
@@ -270,7 +312,7 @@ function levelFor(T) {
 export function levelInfo() {
   const T = state.totalSkill
   const { L, base, need } = levelFor(T)
-  return { level: L + 1, progress: Math.min(1, (T - base) / need) }
+  return { level: L + 1, progress: Math.min(1, (T - base) / need), into: Math.max(0, T - base), need }
 }
 // Rebirth needs a Level: the level that the old Skill cost reached (same economy).
 export const rebirthLevel = (r = state.rebirths) => levelFor(rebirthCost(r)).L + 1
@@ -336,4 +378,69 @@ export function msToNextDay() {
   const now = new Date()
   const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
   return next - now
+}
+
+// --- Auras ---------------------------------------------------------------------------------
+// The Luck Event: every AURA_EVENT.every minutes of the wall clock, x`mult` aura luck for `lasts` minutes.
+export function auraEvent(ms = Date.now()) {
+  const period = AURA_EVENT.every * 60000
+  const into = ms % period
+  const on = into < AURA_EVENT.lasts * 60000
+  return { on, left: on ? (AURA_EVENT.lasts * 60000 - into) / 1000 : 0, next: (period - into) / 1000, mult: on ? AURA_EVENT.mult : 1 }
+}
+export const auraPassMult = () => AURA_PASSES.reduce((m, p) => m * (hasPass(p.id) ? p.mult : 1), 1)
+// Total luck of a roll with this die (AURA_ROLLS luck): passes x Luck Event x the usual luck (potions, titles, Index).
+export const auraLuck = (rollLuck = 1) => rollLuck * auraPassMult() * auraEvent().mult * luckMult()
+// Chance of each aura at this luck (same walk as rollAura), as fractions in AURAS order.
+export function auraOdds(luck) {
+  const out = new Array(AURAS.length).fill(0)
+  let miss = 1
+  for (let i = AURAS.length - 1; i >= 1; i--) {
+    const p = Math.min(1, luck / AURAS[i].n)
+    out[i] = miss * p
+    miss *= 1 - p
+  }
+  out[0] = miss
+  return out
+}
+export function rollAura(luck) {
+  for (let i = AURAS.length - 1; i >= 1; i--) if (Math.random() < luck / AURAS[i].n) return AURAS[i]
+  return AURAS[0]
+}
+
+// --- Quests --------------------------------------------------------------------------------
+function questStat(kind) {
+  if (kind === 'carts') return state.slingshots.length
+  if (kind === 'flights') return state.flights
+  if (kind === 'rebirths') return state.rebirths
+  return state.stats[kind] ?? 0
+}
+// { n, goal, done } of an active quest.
+export function questProgress(q) {
+  const d = questById(q.id)
+  const goal = d.n
+  let n
+  if (d.kind === 'oneFlight') n = q.best ?? 0
+  else if (d.kind === 'carts') n = questStat('carts')
+  else n = questStat(d.kind) - (q.base ?? 0)
+  n = Math.max(0, Math.min(goal, n))
+  return { n, goal, done: n >= goal }
+}
+// Top the active list up to QUEST_COUNT, rotating through the pool (skips active ones and "own N carts"
+// quests that are already met). Returns true if something was added.
+export function fillQuests() {
+  let added = false
+  for (let guard = 0; state.quests.length < QUEST_COUNT && guard < QUESTS.length * 2; guard++) {
+    const d = QUESTS[state.questNext % QUESTS.length]
+    state.questNext++
+    if (state.quests.some((q) => q.id === d.id)) continue
+    if (d.kind === 'carts' && questStat('carts') >= d.n) continue
+    state.quests.push({ id: d.id, base: d.kind === 'oneFlight' || d.kind === 'carts' ? 0 : questStat(d.kind), best: 0 })
+    added = true
+  }
+  return added
+}
+// After every launch: the distance counts for the "fly N m in one launch" quests.
+export function questFlight(dist) {
+  for (const q of state.quests) if (questById(q.id)?.kind === 'oneFlight') q.best = Math.max(q.best ?? 0, dist)
 }

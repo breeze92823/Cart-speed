@@ -8,11 +8,11 @@ import { setCameraSensitivity, syncYawToPlayer, update as updateCamera } from '.
 import { onModeChanged, toggleMode } from './modes.js'
 import { bodyCount, initPhysics, stepPhysics } from './physics.js'
 import { createLighting } from './lighting.js'
-import { buildGround, createWorld } from './world.js'
+import { createWorld } from './world.js'
 import { createPostFx } from './postfx.js'
 import { setNeonBloom } from './propkit.js'
 import { createFx } from './fx.js'
-import { buildProps } from './props.js'
+import { buildHub } from './hub/index.js'
 import { createHud } from './hud.js'
 import { createGame } from './game.js'
 import { installAudio, setAdMuted, setMusicLevel, setVolume } from './audio/index.js'
@@ -90,9 +90,8 @@ lighting = createLighting(scene, renderer, preset)
 bloxity.loadingStep('Building the lobby')
 fx = createFx(scene)
 fx.setQuality(preset.particles)
-const world = createWorld(scene) // slime river, clouds, distance signs
-buildGround(scene) // plaza, terraces, cliffs, trees + colliders
-const props = buildProps(scene, fx)
+const world = createWorld(scene) // the road, its power lines, region gates, clouds
+const props = buildHub(scene, fx) // the lobby: plaza, cliffs, banks, treadmills, cart shop, eggs... + colliders
 createPlayerBody()
 syncYawToPlayer()
 
@@ -143,7 +142,7 @@ function currentPose() {
     y: p.y,
     z: p.z,
     yaw: player.facing + (tilt?.spin ?? 0),
-    speed: flying ? 0 : Math.hypot(player.velocity.x, player.velocity.z),
+    speed: flying ? 0 : Math.max(game.runSpeed(), Math.hypot(player.velocity.x, player.velocity.z)), // runSpeed: on a treadmill belt
     vy: player.velocity.y,
     grounded: player.grounded,
     flying,
@@ -261,7 +260,7 @@ function frame() {
   const flying = game.isFlying()
   animator?.update(dt, {
     grounded: player.grounded,
-    speed: flying ? 0 : Math.hypot(player.velocity.x, player.velocity.z),
+    speed: flying ? 0 : Math.max(game.runSpeed(), Math.hypot(player.velocity.x, player.velocity.z)), // runSpeed: on a treadmill belt
     verticalVelocity: flying ? 6 : player.velocity.y,
     turn: 0,
   })
@@ -314,5 +313,5 @@ if (import.meta.env.DEV) {
     resetPlayer({ x, y, z }, facing)
     syncYawToPlayer()
   }
-  window.__game = { player, scene, renderer, camera, postfx, bodies: bodyCount, toggleMode, teleport, state, friends, game, hud, net, remotes }
+  window.__game = { player, scene, renderer, camera, postfx, bodies: bodyCount, toggleMode, teleport, state, friends, game, hud, net, remotes, frame } // frame: step the loop by hand (hidden tabs pause requestAnimationFrame)
 }

@@ -31,7 +31,16 @@ export function thumb(key, build, yaw = 0.5) {
     const obj = build()
     obj.rotation.y += yaw
     scene.add(obj)
-    const box = new Box3().setFromObject(obj)
+    // Frame the meshes only: glow sprites (Golden / Diamond / glowing pets) would shrink the model.
+    obj.updateWorldMatrix(true, true)
+    const box = new Box3()
+    const part = new Box3()
+    obj.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox()
+      box.union(part.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld))
+    })
+    if (box.isEmpty()) box.setFromObject(obj)
     const size = box.getSize(new Vector3())
     const center = box.getCenter(new Vector3())
     const r = Math.max(size.x, size.y, size.z) * 0.62

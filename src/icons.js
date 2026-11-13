@@ -584,6 +584,516 @@ Object.assign(PAINTERS, {
   },
 })
 
+// --- Inventory / Auras / HUD rework (star potions, dice, aura orb, cart, calendar, quests) ---------
+function starPath(g, cx, cy, ro, ri, n = 5, rot = -Math.PI / 2) {
+  g.beginPath()
+  for (let i = 0; i < n * 2; i++) {
+    const r = i % 2 ? ri : ro
+    const a = rot + (i * Math.PI) / n
+    g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
+  }
+  g.closePath()
+}
+// A star-shaped potion bottle with a cork (Power / Wins / Luck).
+function starPotion(g, top, bot) {
+  g.lineJoin = 'round'
+  rr(g, 104, 22, 48, 46, 10)
+  fillStroke(g, grad(g, 22, 68, '#e0a060', '#9a5a26'), 10)
+  rr(g, 96, 60, 64, 22, 8)
+  fillStroke(g, grad(g, 60, 82, '#f0b878', '#b06a30'), 9)
+  starPath(g, 128, 160, 104, 50)
+  fillStroke(g, grad(g, 70, 250, top, bot), 11)
+  g.save()
+  starPath(g, 128, 160, 92, 44)
+  g.clip()
+  g.fillStyle = 'rgba(255,255,255,0.32)'
+  g.beginPath()
+  g.ellipse(98, 128, 28, 18, -0.5, 0, Math.PI * 2)
+  g.fill()
+  g.fillStyle = 'rgba(0,0,0,0.12)'
+  g.beginPath()
+  g.ellipse(150, 196, 42, 22, -0.3, 0, Math.PI * 2)
+  g.fill()
+  g.restore()
+}
+// A rounded die in three-quarter view. face = top colour, side colours, pip colour.
+function die(g, top, left, right, pip, glow) {
+  g.lineJoin = 'round'
+  if (glow) {
+    g.shadowColor = glow
+    g.shadowBlur = 26
+  }
+  const T = [[128, 26], [228, 74], [128, 122], [28, 74]]
+  const poly = (pts, fill) => {
+    g.beginPath()
+    pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)))
+    g.closePath()
+    fillStroke(g, fill, 10)
+  }
+  poly(T, top)
+  g.shadowBlur = 0
+  poly([[28, 74], [128, 122], [128, 234], [28, 186]], left)
+  poly([[128, 122], [228, 74], [228, 186], [128, 234]], right)
+  g.fillStyle = pip
+  const dot = (x, y, rx, ry, rot = 0) => {
+    g.beginPath()
+    g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2)
+    g.fill()
+  }
+  dot(128, 74, 15, 9)
+  for (const [x, y] of [[62, 112], [96, 150], [62, 150], [96, 188], [62, 188], [96, 112]]) dot(x, y, 8, 11, 0.45)
+  for (const [x, y] of [[160, 120], [196, 102], [160, 174], [196, 156]]) dot(x, y, 8, 11, -0.45)
+}
+Object.assign(PAINTERS, {
+  starSkill: (g) => starPotion(g, '#8fe0ff', '#1f6fe8'),
+  starWins: (g) => starPotion(g, '#fff27a', '#f0a012'),
+  starLuck: (g) => starPotion(g, '#a8ff6a', '#1fae3a'),
+  diceRoll: (g) => die(g, '#ffffff', '#d8dee8', '#b8c2d0', '#1b1f2e'),
+  diceGold: (g) => die(g, '#ffe46a', '#f0b020', '#d88a12', '#5a2a00', 'rgba(255,220,80,0.9)'),
+  diceDiamond: (g) => die(g, '#e8fcff', '#9fe8ff', '#5fc8f0', '#1a4f8a', 'rgba(140,230,255,0.9)'),
+  diceCosmic: (g) => die(g, '#d8a8ff', '#9a4aff', '#6a1ad8', '#ff8af0', 'rgba(200,120,255,0.95)'),
+  // Glowing purple orb with a swirl ring and a white sparkle (Auras).
+  aura(g) {
+    g.lineJoin = 'round'
+    g.save()
+    g.translate(128, 140)
+    g.rotate(-0.35)
+    g.beginPath()
+    g.ellipse(0, 18, 112, 46, 0, 0, Math.PI * 2)
+    g.lineWidth = 30
+    g.strokeStyle = OUT
+    g.stroke()
+    const ring = g.createLinearGradient(-110, 0, 110, 0)
+    ring.addColorStop(0, '#ffe03a')
+    ring.addColorStop(0.5, '#3fe0ff')
+    ring.addColorStop(1, '#5aff7a')
+    g.lineWidth = 18
+    g.strokeStyle = ring
+    g.stroke()
+    g.restore()
+    g.beginPath()
+    g.arc(128, 124, 84, 0, Math.PI * 2)
+    const o = g.createRadialGradient(100, 92, 10, 128, 124, 90)
+    o.addColorStop(0, '#ffb8ff')
+    o.addColorStop(0.5, '#c43cff')
+    o.addColorStop(1, '#6a12c8')
+    fillStroke(g, o, 10)
+    starPath(g, 128, 124, 54, 16, 4, 0)
+    fillStroke(g, '#ffffff', 7)
+    g.save()
+    g.translate(128, 140)
+    g.rotate(-0.35)
+    g.beginPath()
+    g.ellipse(0, 18, 112, 46, 0, -0.1, Math.PI + 0.1)
+    g.lineWidth = 18
+    g.strokeStyle = '#3fe0ff'
+    g.stroke()
+    g.restore()
+    starPath(g, 206, 52, 22, 7, 4, 0)
+    fillStroke(g, '#ffffff', 5)
+  },
+  // Wire shopping cart, side view (Carts).
+  cart(g) {
+    g.lineJoin = 'round'
+    g.lineCap = 'round'
+    g.beginPath()
+    g.moveTo(26, 40)
+    g.lineTo(60, 40)
+    g.lineWidth = 20
+    g.strokeStyle = OUT
+    g.stroke()
+    g.lineWidth = 10
+    g.strokeStyle = '#ff4a5a'
+    g.stroke()
+    g.beginPath()
+    g.moveTo(54, 64)
+    g.lineTo(232, 64)
+    g.lineTo(210, 170)
+    g.lineTo(76, 170)
+    g.closePath()
+    fillStroke(g, grad(g, 64, 170, '#e8f0f8', '#9aa6b6'), 11)
+    g.strokeStyle = 'rgba(40,50,70,0.55)'
+    g.lineWidth = 5
+    for (let x = 82; x < 220; x += 22) {
+      g.beginPath()
+      g.moveTo(x, 70)
+      g.lineTo(x - 6 + (x - 140) * -0.05, 166)
+      g.stroke()
+    }
+    for (let y = 92; y < 166; y += 24) {
+      g.beginPath()
+      g.moveTo(60 + (y - 64) * 0.2, y)
+      g.lineTo(228 - (y - 64) * 0.2, y)
+      g.stroke()
+    }
+    rr(g, 50, 52, 186, 20, 6)
+    fillStroke(g, grad(g, 52, 72, '#ff6a7a', '#d8243a'), 8)
+    g.beginPath()
+    g.moveTo(84, 172)
+    g.lineTo(84, 196)
+    g.lineTo(206, 196)
+    g.lineWidth = 10
+    g.strokeStyle = OUT
+    g.stroke()
+    for (const x of [92, 196]) {
+      g.beginPath()
+      g.arc(x, 212, 18, 0, Math.PI * 2)
+      fillStroke(g, '#3a3f4e', 9)
+      g.beginPath()
+      g.arc(x, 212, 6, 0, Math.PI * 2)
+      g.fillStyle = '#c9ced6'
+      g.fill()
+    }
+  },
+  // Orange cat face (Pets).
+  catface(g) {
+    g.lineJoin = 'round'
+    const fur = grad(g, 40, 230, '#ffb04a', '#f0761a')
+    for (const s of [-1, 1]) {
+      g.beginPath()
+      g.moveTo(128 + s * 92, 120)
+      g.lineTo(128 + s * 84, 26)
+      g.lineTo(128 + s * 30, 72)
+      g.closePath()
+      fillStroke(g, fur, 10)
+    }
+    rr(g, 32, 64, 192, 162, 64)
+    fillStroke(g, fur, 10)
+    g.fillStyle = 'rgba(255,255,255,0.25)'
+    rr(g, 50, 78, 156, 40, 20)
+    g.fill()
+    g.fillStyle = 'rgba(180,80,20,0.5)'
+    for (const x of [108, 128, 148]) g.fillRect(x - 4, 70, 8, 26)
+    g.fillStyle = OUT
+    for (const x of [92, 164]) {
+      g.beginPath()
+      g.ellipse(x, 146, 15, 19, 0, 0, Math.PI * 2)
+      g.fill()
+    }
+    g.fillStyle = '#ffffff'
+    for (const x of [86, 158]) {
+      g.beginPath()
+      g.arc(x, 139, 6, 0, Math.PI * 2)
+      g.fill()
+    }
+    g.fillStyle = '#ff8a9a'
+    for (const x of [64, 192]) {
+      g.beginPath()
+      g.ellipse(x, 176, 16, 9, 0, 0, Math.PI * 2)
+      g.fill()
+    }
+    g.beginPath()
+    g.moveTo(112, 176)
+    g.quadraticCurveTo(120, 190, 128, 178)
+    g.quadraticCurveTo(136, 190, 144, 176)
+    g.lineWidth = 6
+    g.strokeStyle = OUT
+    g.stroke()
+  },
+  // Wall calendar with a "7" (Daily Rewards).
+  calendar(g) {
+    g.lineJoin = 'round'
+    rr(g, 30, 46, 196, 184, 26)
+    fillStroke(g, grad(g, 46, 230, '#ffffff', '#d4dae4'), 11)
+    g.save()
+    rr(g, 30, 46, 196, 62, 26)
+    g.clip()
+    g.fillStyle = grad(g, 46, 108, '#ff6a7a', '#e0243a')
+    g.fillRect(30, 46, 196, 62)
+    g.restore()
+    g.beginPath()
+    g.moveTo(30, 108)
+    g.lineTo(226, 108)
+    g.lineWidth = 9
+    g.strokeStyle = OUT
+    g.stroke()
+    for (const x of [82, 174]) {
+      rr(g, x - 11, 22, 22, 50, 10)
+      fillStroke(g, '#c9ced6', 8)
+    }
+    g.font = '900 118px Fredoka, Arial Black, sans-serif'
+    g.textAlign = 'center'
+    g.textBaseline = 'middle'
+    g.lineWidth = 14
+    g.strokeStyle = OUT
+    g.strokeText('7', 128, 174)
+    g.fillStyle = '#ffffff'
+    g.fillText('7', 128, 174)
+  },
+  // Rolled scroll (Quests).
+  scroll(g) {
+    g.lineJoin = 'round'
+    rr(g, 54, 34, 150, 188, 14)
+    fillStroke(g, grad(g, 34, 222, '#fff4d6', '#e8c88a'), 10)
+    g.strokeStyle = 'rgba(150,100,40,0.7)'
+    g.lineWidth = 9
+    g.lineCap = 'round'
+    for (const y of [80, 112, 144, 176]) {
+      g.beginPath()
+      g.moveTo(80, y)
+      g.lineTo(178, y)
+      g.stroke()
+    }
+    for (const y of [34, 222]) {
+      rr(g, 38, y - 16, 182, 32, 16)
+      fillStroke(g, grad(g, y - 16, y + 16, '#e0a060', '#9a5a26'), 9)
+    }
+  },
+  // Red / white price tag (Shop).
+  basket(g) {
+    g.lineJoin = 'round'
+    g.beginPath()
+    g.arc(128, 104, 66, Math.PI, 0)
+    g.lineWidth = 30
+    g.strokeStyle = OUT
+    g.stroke()
+    g.lineWidth = 16
+    g.strokeStyle = '#3f8cff'
+    g.stroke()
+    g.beginPath()
+    g.moveTo(22, 104)
+    g.lineTo(234, 104)
+    g.lineTo(206, 230)
+    g.lineTo(50, 230)
+    g.closePath()
+    fillStroke(g, grad(g, 104, 230, '#ff8ab8', '#e0407a'), 11)
+    g.strokeStyle = 'rgba(120,10,50,0.45)'
+    g.lineWidth = 9
+    for (const x of [78, 110, 146, 178]) {
+      g.beginPath()
+      g.moveTo(x, 122)
+      g.lineTo(x + (x - 128) * 0.06, 212)
+      g.stroke()
+    }
+    rr(g, 14, 92, 228, 30, 10)
+    fillStroke(g, grad(g, 92, 122, '#ffd0e4', '#ff7aaa'), 9)
+  },
+})
+
+// Trail card emblems (TRAILS[].emblem), drawn at the head of the trail swoosh.
+const EMBLEMS = {
+  receipt(g) {
+    g.beginPath()
+    g.moveTo(-34, -46)
+    g.lineTo(34, -46)
+    g.lineTo(34, 40)
+    for (let i = 0; i < 6; i++) g.lineTo(34 - (i + 0.5) * 11.3, i % 2 ? 40 : 50)
+    g.lineTo(-34, 40)
+    g.closePath()
+    fillStroke(g, '#ffffff', 7)
+    g.strokeStyle = '#8a8f9a'
+    g.lineWidth = 5
+    for (const y of [-28, -12, 4, 20]) {
+      g.beginPath()
+      g.moveTo(-22, y)
+      g.lineTo(y === 20 ? 2 : 22, y)
+      g.stroke()
+    }
+  },
+  bubble(g) {
+    for (const [x, y, r] of [[0, 0, 34], [36, -30, 16], [-30, 30, 12]]) {
+      g.beginPath()
+      g.arc(x, y, r, 0, Math.PI * 2)
+      fillStroke(g, 'rgba(200,236,255,0.95)', 6)
+      g.fillStyle = 'rgba(255,255,255,0.9)'
+      g.beginPath()
+      g.arc(x - r * 0.35, y - r * 0.35, r * 0.25, 0, Math.PI * 2)
+      g.fill()
+    }
+  },
+  banana(g) {
+    g.beginPath()
+    g.moveTo(-46, -30)
+    g.quadraticCurveTo(-30, 46, 50, 22)
+    g.quadraticCurveTo(-6, 22, -26, -34)
+    g.closePath()
+    fillStroke(g, grad(g, -34, 46, '#fff27a', '#e8b812'), 7)
+    rr(g, -52, -44, 14, 16, 4)
+    fillStroke(g, '#6a4a1a', 5)
+  },
+  tag(g) {
+    g.save()
+    g.rotate(-0.4)
+    g.beginPath()
+    g.moveTo(-40, -26)
+    g.lineTo(24, -26)
+    g.lineTo(48, 0)
+    g.lineTo(24, 26)
+    g.lineTo(-40, 26)
+    g.closePath()
+    fillStroke(g, '#ff4a5a', 7)
+    g.font = '900 34px Fredoka, Arial Black, sans-serif'
+    g.textAlign = 'center'
+    g.textBaseline = 'middle'
+    g.fillStyle = '#ffffff'
+    g.fillText('%', -8, 2)
+    g.restore()
+  },
+  soda(g) {
+    rr(g, -26, -46, 52, 92, 12)
+    fillStroke(g, grad(g, -46, 46, '#e0a8ff', '#8a2ae0'), 7)
+    rr(g, -20, -54, 40, 12, 4)
+    fillStroke(g, '#c9ced6', 5)
+    rr(g, -26, -12, 52, 22, 2)
+    g.fillStyle = 'rgba(255,255,255,0.75)'
+    g.fill()
+  },
+  chili(g) {
+    g.beginPath()
+    g.moveTo(-40, -30)
+    g.quadraticCurveTo(10, -40, 42, 34)
+    g.quadraticCurveTo(0, 0, -44, -10)
+    g.closePath()
+    fillStroke(g, grad(g, -40, 34, '#ff6a4a', '#c81a1a'), 7)
+    g.beginPath()
+    g.moveTo(-42, -22)
+    g.quadraticCurveTo(-52, -40, -40, -50)
+    g.lineWidth = 8
+    g.strokeStyle = '#2fae3a'
+    g.stroke()
+  },
+  coin(g) {
+    g.beginPath()
+    g.arc(0, 0, 42, 0, Math.PI * 2)
+    fillStroke(g, grad(g, -42, 42, '#ffe46a', '#d8941a'), 7)
+    g.beginPath()
+    g.arc(0, 0, 30, 0, Math.PI * 2)
+    g.strokeStyle = 'rgba(150,90,10,0.6)'
+    g.lineWidth = 5
+    g.stroke()
+    g.font = '900 30px Fredoka, Arial Black, sans-serif'
+    g.textAlign = 'center'
+    g.textBaseline = 'middle'
+    g.fillStyle = '#fff6c0'
+    g.fillText('+1', 0, 2)
+  },
+  barcode(g) {
+    g.save()
+    g.rotate(-0.3)
+    rr(g, -46, -30, 92, 60, 8)
+    fillStroke(g, '#ffffff', 7)
+    g.fillStyle = OUT
+    for (let x = -36, i = 0; x < 36; i++) {
+      const w = [3, 6, 2, 4][i % 4]
+      g.fillRect(x, -20, w, 40)
+      x += w + 3
+    }
+    g.fillStyle = '#ff2a3a'
+    g.fillRect(-56, -2, 112, 5)
+    g.restore()
+  },
+  disco(g) {
+    g.beginPath()
+    g.arc(0, 4, 42, 0, Math.PI * 2)
+    fillStroke(g, '#9fb8d8', 7)
+    g.save()
+    g.beginPath()
+    g.arc(0, 4, 39, 0, Math.PI * 2)
+    g.clip()
+    const cols = ['#ff7ad0', '#5ad8ff', '#ffe46a', '#ffffff', '#b07bff', '#7dff9a']
+    for (let y = -38, r = 0; y < 46; y += 11, r++) for (let x = -42 + (r % 2) * 5, c = 0; x < 42; x += 11, c++) {
+      g.fillStyle = cols[(r * 3 + c) % cols.length]
+      g.fillRect(x, y, 10, 10)
+    }
+    g.restore()
+    g.beginPath()
+    g.moveTo(0, -38)
+    g.lineTo(0, -56)
+    g.lineWidth = 5
+    g.strokeStyle = OUT
+    g.stroke()
+  },
+  card(g) {
+    g.save()
+    g.rotate(-0.35)
+    rr(g, -48, -30, 96, 60, 10)
+    fillStroke(g, grad(g, -30, 30, '#8fe0ff', '#2a7fe8'), 7)
+    rr(g, -36, -14, 22, 16, 3)
+    fillStroke(g, '#ffd23a', 4)
+    g.font = '900 20px Fredoka, Arial Black, sans-serif'
+    g.textAlign = 'center'
+    g.textBaseline = 'middle'
+    g.fillStyle = '#ffffff'
+    g.fillText('VIP', 14, -4)
+    g.restore()
+  },
+  cart(g) {
+    g.save()
+    g.translate(-62, -62)
+    g.scale(0.48, 0.48)
+    PAINTERS.cart(g)
+    g.restore()
+  },
+  bag(g) {
+    g.beginPath()
+    g.arc(0, -22, 18, Math.PI, 0)
+    g.lineWidth = 7
+    g.strokeStyle = OUT
+    g.stroke()
+    rr(g, -36, -24, 72, 72, 8)
+    fillStroke(g, grad(g, -24, 48, '#3a3024', '#14100a'), 7)
+    rr(g, -20, -6, 40, 36, 6)
+    fillStroke(g, '#ffd23a', 5)
+    g.font = '900 28px Fredoka, Arial Black, sans-serif'
+    g.textAlign = 'center'
+    g.textBaseline = 'middle'
+    g.fillStyle = '#1b1f2e'
+    g.fillText('%', 0, 13)
+  },
+  clover(g) {
+    g.save()
+    g.translate(-50, -50)
+    g.scale(0.4, 0.4)
+    PAINTERS.clover(g)
+    g.restore()
+  },
+}
+
+// Trail card art (Trails window): a curved comet tail in the trail's colours sweeping up to its emblem,
+// with a few sparkles.
+const trailCards = new Map()
+export function trailCardURL(t, size = 256) {
+  const key = `${t.id}@${size}`
+  if (trailCards.has(key)) return trailCards.get(key)
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const g = c.getContext('2d')
+  g.scale(size / 256, size / 256)
+  g.lineJoin = 'round'
+  g.lineCap = 'round'
+  const cols = t.colors.length > 1 ? t.colors : [t.colors[0], t.colors[0]]
+  const gr = g.createLinearGradient(40, 230, 170, 70)
+  cols.forEach((col, k) => gr.addColorStop(k / (cols.length - 1), col))
+  g.beginPath()
+  g.moveTo(44, 232)
+  g.bezierCurveTo(40, 160, 92, 86, 168, 70)
+  g.bezierCurveTo(176, 110, 150, 120, 120, 132)
+  g.bezierCurveTo(84, 150, 62, 190, 44, 232)
+  g.closePath()
+  g.fillStyle = gr
+  g.fill()
+  g.lineWidth = 7
+  g.strokeStyle = OUT
+  g.stroke()
+  g.beginPath()
+  g.moveTo(56, 206)
+  g.bezierCurveTo(66, 160, 102, 112, 150, 88)
+  g.strokeStyle = 'rgba(255,255,255,0.6)'
+  g.lineWidth = 5
+  g.stroke()
+  g.save()
+  g.translate(170, 84)
+  ;(EMBLEMS[t.emblem] ?? EMBLEMS.receipt)(g)
+  g.restore()
+  for (const [x, y, r] of [[52, 92, 14], [214, 160, 12], [176, 214, 11]]) {
+    starPath(g, x, y, r, r * 0.32, 4, 0)
+    fillStroke(g, '#ffffff', 4)
+  }
+  const url = c.toDataURL()
+  trailCards.set(key, url)
+  return url
+}
+
 // Trail card art: a blocky white figure flying right with a swoosh of the trail's colours behind.
 const trailArts = new Map()
 export function trailArtURL(id, colors, size = 256) {

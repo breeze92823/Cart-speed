@@ -20,13 +20,20 @@ import {
   skipRebirthPrice,
   TRAIN,
   WORLD2_SKILL,
+  HUB,
   rebirthCost,
+  AURA_AUTO,
+  AURA_PASSES,
+  AURA_ROLLS,
+  PET_TIERS,
+  REBIRTH_MILESTONES,
 } from './config.js'
 import { inputState, onKey } from './input.js'
 import { player, resetPlayer, setPlayerOverride } from './player.js'
 import { syncYawToPlayer } from './camera.js'
 import * as bloxity from './bloxity.js'
 import { buildSlingshot, fmtShort, makeSign } from './props.js'
+import { isCartStyle } from './hub/carts.js'
 import { animatePet, buildPet } from './petModels.js'
 import { createFlight } from './flight.js'
 import { createTraining } from './training.js'
@@ -62,9 +69,16 @@ import {
   state,
   trailById,
   winsMult,
+  auraById,
+  auraLuck,
+  fillQuests,
+  questById,
+  questProgress,
+  rollAura,
 } from './state.js'
+import { createAuraGlow } from './auraGlow.js'
 
-// Gameplay: training clicks, slingshot pads, training tables, eggs + hatching,
+// Gameplay: training clicks, the Cart Shop pads (carts = the old slingshots), the treadmills, eggs + hatching,
 // limited pet stands, the flight over the slime, rebirths, passes / packs /
 // trails, the rewards chest and playtime gifts, pets following the player,
 // the held slingshot, name tag and leaderboards. Driven once per frame by main.js.
@@ -101,7 +115,8 @@ export function createGame({ scene, camera, fx, props, hud }) {
     state.totalSkill = 0
     state.rebirths++
     sfx.rebirth()
-    hud.toast(`Rebirth ${state.rebirths}! Now x${rebirthMult()} Skill`, '#6fd4ff')
+    hud.toast(`Rebirth ${state.rebirths}! Now x${rebirthMult()} Power`, '#6fd4ff')
+    checkMilestones()
     const p = player.position
     fx.burst(70, { x: p.x, y: p.y + 1, z: p.z, spread: 0.5, speed: 9, up: 0.3, drag: 2, life: 1.2, size: 0.6, color: ['#ff3b4e', '#2f9bff', '#ffffff'], shape: 'star' })
     ringPulse(p.x, p.y + 0.2, p.z, '#6fd4ff')
@@ -113,12 +128,22 @@ export function createGame({ scene, camera, fx, props, hud }) {
     if (r.boost) {
       state.potions[r.boost] += r.n ?? 1
       sfx.gift('potion')
-      hud.toast(`+${r.n ?? 1} ${BOOSTS[r.boost].name}${(r.n ?? 1) > 1 ? 's' : ''}! (Inventory > Items)`, BOOSTS[r.boost].color)
+      hud.toast(`+${r.n ?? 1} ${BOOSTS[r.boost].name}${(r.n ?? 1) > 1 ? 's' : ''}! (Inventory > Potions)`, BOOSTS[r.boost].color)
     } else if (r.pet) {
       addPet(r.pet)
       rebuildPets()
       sfx.gift('pet')
       hud.toast(`${petById(r.pet).name} joined you!`, '#ff8fd8')
+    } else if (r.dice) {
+      state.dice[r.dice] = (state.dice[r.dice] ?? 0) + (r.n ?? 1)
+      sfx.gift('potion')
+      hud.toast(`+${r.n ?? 1} ${r.dice[0].toUpperCase()}${r.dice.slice(1)} Dice! (Auras)`, '#ffd23a')
+    } else if (r.trail) {
+      const t = trailById(r.trail)
+      if (!state.trails.includes(r.trail)) state.trails.push(r.trail)
+      state.trail = r.trail
+      sfx.gift('clover')
+      hud.toast(`${t.name} unlocked! x${t.mult} Wins`, '#7dff5a')
     } else if (r.sling) {
       if (!state.slingshots.includes(r.sling)) state.slingshots.push(r.sling)
       state.equippedSling = r.sling
@@ -248,9 +273,9 @@ export function createGame({ scene, camera, fx, props, hud }) {
     deletePet(uid) {
       const pet = state.pets.find((p) => p.uid === uid)
       if (!pet) return
-      if (pet.equipped) {
+      if (pet.equipped || pet.locked) {
         sfx.deny()
-        return hud.toast('Unequip a pet before deleting it', '#ff6a6a')
+        return hud.toast(pet.locked ? 'Unlock a pet before deleting it' : 'Unequip a pet before deleting it', '#ff6a6a')
       }
       state.pets = state.pets.filter((p) => p.uid !== uid)
       sfx.trash()
@@ -258,8 +283,8 @@ export function createGame({ scene, camera, fx, props, hud }) {
       hud.refreshWindow()
     },
     deleteUnequipped() {
-      const n = state.pets.filter((p) => !p.equipped).length
-      state.pets = state.pets.filter((p) => p.equipped)
+      const n = state.pets.filter((p) => !p.equipped && !p.locked).length
+      state.pets = state.pets.filter((p) => p.equipped || p.locked)
       sfx.trash()
       hud.toast(`Removed ${n} pets`, '#ffffff')
       changed()
@@ -287,7 +312,7 @@ export function createGame({ scene, camera, fx, props, hud }) {
     },
     buyTrail(id) {
       const t = TRAILS.find((x) => x.id === id)
-      if (!t || state.trails.includes(id)) return
+      if (!t || state.trails.includes(id) || !t.price) return
       if (!spend(t.price)) return
       state.trails.push(id)
       state.trail = id
@@ -360,7 +385,7 @@ export function createGame({ scene, camera, fx, props, hud }) {
       state.daily.claimed.push(i)
       state.stats.dailyClaims++
       const r = DAILY[i]
-      if (r.sling && state.slingshots.includes(r.sling)) {
+      if ((r.sling && state.slingshots.includes(r.sling)) || (r.trail && state.trails.includes(r.trail))) {
         for (const x of r.again) grant(x)
         hud.toast('Day 7 again: 3 of every Boost!', '#ffd23a')
       } else grant(r)
@@ -381,16 +406,179 @@ export function createGame({ scene, camera, fx, props, hud }) {
       if (g.skill) {
         addSkill(g.skill * rebirthMult())
         sfx.gift('bolt')
-        hud.toast(`+${fmt(g.skill * rebirthMult())} Skill!`, '#5fe0ff')
+        hud.toast(`+${fmt(g.skill * rebirthMult())} Power!`, '#5fe0ff')
       }
       if (g.boost) grant({ boost: g.boost, n: 1 })
+      if (g.dice) grant({ dice: g.dice, n: 1 })
       if (!g.egg) celebrate()
       changed()
       hud.refreshWindow()
       refreshBadge()
     },
+    openWindow: (id) => hud.openWindow(id),
+    // --- My Pets: lock, fuse ---
+    lockPet(uid) {
+      const pet = state.pets.find((p) => p.uid === uid)
+      if (!pet) return
+      pet.locked = !pet.locked
+      if (!pet.locked) delete pet.locked
+      sfx.pop(!!pet.locked)
+      changed()
+      hud.refreshWindow()
+    },
+    // Three of the same pet + tier (not locked) become one of the next tier (Golden, then Diamond).
+    fusePet(uid, quiet = false) {
+      const pet = state.pets.find((p) => p.uid === uid)
+      if (!pet) return false
+      const ti = PET_TIERS.findIndex((t) => t.id === (pet.tier || ''))
+      const next = PET_TIERS[ti + 1]
+      if (!next) return false
+      const same = state.pets.filter((p) => p.id === pet.id && p.tier === pet.tier && !p.locked).sort((a, b) => a.equipped - b.equipped)
+      if (same.length < 3) {
+        if (!quiet) {
+          sfx.deny()
+          hud.toast(`Fusing needs 3 unlocked ${petById(pet.id).name}s (you have ${same.length})`, '#ff6a6a')
+        }
+        return false
+      }
+      const used = same.slice(0, 3)
+      const wasEquipped = used.some((p) => p.equipped)
+      state.pets = state.pets.filter((p) => !used.includes(p))
+      const made = addPet(pet.id, next.id)
+      if (wasEquipped && !made.equipped && state.pets.filter((p) => p.equipped).length < petSlots()) made.equipped = true
+      if (!quiet) {
+        sfx.fanfare()
+        hud.toast(`Fused into a ${next.name} ${petById(pet.id).name}!`, next.id === 'd' ? '#9fe8ff' : '#ffd23a')
+        celebrate(next.id === 'd' ? ['#9fe8ff', '#ffffff', '#5fc8ff'] : ['#ffd23a', '#ffffff', '#ffb21f'])
+        rebuildPets()
+        changed()
+        hud.refreshWindow()
+      }
+      return made
+    },
+    fuseAll() {
+      let n = 0
+      for (let guard = 0; guard < 500; guard++) {
+        const groups = new Map()
+        for (const p of state.pets) if (!p.locked && p.tier !== 'd') groups.set(`${p.id}:${p.tier}`, [...(groups.get(`${p.id}:${p.tier}`) ?? []), p])
+        const g = [...groups.values()].find((x) => x.length >= 3)
+        if (!g) break
+        if (actions.fusePet(g[0].uid, true)) n++
+        else break
+      }
+      if (!n) {
+        sfx.deny()
+        return hud.toast('Nothing to fuse: you need 3 of the same unlocked pet', '#ff6a6a')
+      }
+      sfx.fanfare()
+      hud.toast(`Fused ${n} time${n > 1 ? 's' : ''}!`, '#ffd23a')
+      celebrate()
+      rebuildPets()
+      changed()
+      hud.refreshWindow()
+    },
+    // --- My Carts: buy (in shop order) ---
+    buyCart(id) {
+      const i = SLINGSHOTS.findIndex((c) => c.id === id)
+      const c = SLINGSHOTS[i]
+      if (!c || state.slingshots.includes(id)) return
+      if (i > 0 && !state.slingshots.includes(SLINGSHOTS[i - 1].id)) {
+        sfx.deny()
+        return hud.toast(`Buy the ${SLINGSHOTS[i - 1].name} first!`, '#ff6a6a')
+      }
+      if (!spend(c.price)) return
+      state.slingshots.push(id)
+      state.equippedSling = id
+      sfx.purchase()
+      hud.toast(`Bought ${c.name}! +${c.fly}% FLY`, '#7dff7d')
+      celebrate()
+      changed()
+      hud.refreshWindow()
+    },
+    // --- My Potions: a 3-pack for Wins ---
+    buyPotions(kind) {
+      const b = BOOSTS[kind]
+      if (!b || !spend(b.pack3)) return
+      state.potions[kind] = (state.potions[kind] ?? 0) + 3
+      sfx.purchase()
+      hud.toast(`+3 ${b.name}s!`, b.color)
+      changed()
+      hud.refreshWindow()
+    },
+    // --- Auras ---
+    // One roll with die `id` (AURA_ROLLS): uses an owned die, else pays its Wins price. Returns
+    // { aura, isNew } (the window shows it) or null.
+    rollAura(id, auto = false) {
+      const d = AURA_ROLLS.find((x) => x.id === id)
+      if (!d) return null
+      if (d.id !== 'roll' && (state.dice[d.id] ?? 0) > 0) state.dice[d.id]--
+      else if (state.wins < d.price) {
+        if (!auto) {
+          sfx.deny()
+          hud.toast(`Not enough Wins! Need ${fmtShort(d.price - state.wins)} more`, '#ff6a6a')
+        }
+        return null
+      } else {
+        state.wins -= d.price
+        state.stats.spent += d.price
+      }
+      const aura = rollAura(auraLuck(d.luck))
+      const isNew = !state.auras.includes(aura.id)
+      if (isNew) state.auras.push(aura.id)
+      state.stats.rolls = (state.stats.rolls ?? 0) + 1
+      // equip it when it beats the equipped one
+      const cur = auraById(state.aura)
+      if (!cur || aura.power > cur.power) state.aura = aura.id
+      if (isNew || aura.n >= 1000) {
+        sfx.fanfare()
+        hud.toast(`${isNew ? 'NEW AURA: ' : ''}${aura.name}! (1 in ${fmt(aura.n)})`, aura.colors[0])
+        if (aura.n >= 300) celebrate(aura.colors)
+      } else sfx.pop(true)
+      glow.set(auraById(state.aura))
+      changed()
+      return { aura, isNew }
+    },
+    toggleAutoRoll() {
+      autoRoll = !autoRoll
+      autoAcc = 0
+      hud.toast(autoRoll ? 'Auto Roll on' : 'Auto Roll off', autoRoll ? '#7dff7d' : '#ffffff')
+    },
+    autoRolling: () => autoRoll,
+    buyAuraPass(id) {
+      const p = AURA_PASSES.find((x) => x.id === id)
+      if (!p || hasPass(id)) return
+      if (!spend(p.price)) return
+      state.passes[id] = true
+      sfx.purchase()
+      hud.toast(`x${p.mult} Aura Luck forever!`, '#7dff5a')
+      celebrate(['#7dff5a', '#ffd23a', '#ffffff'])
+      changed()
+      hud.refreshWindow()
+    },
+    equipAura(id) {
+      if (id && !state.auras.includes(id)) return
+      state.aura = id
+      if (id) sfx.equip()
+      else sfx.pop(false)
+      glow.set(auraById(state.aura))
+      changed()
+      hud.refreshWindow()
+    },
+    // --- Quests ---
+    claimQuest(id) {
+      const q = state.quests.find((x) => x.id === id)
+      if (!q || !questProgress(q).done) return
+      const d = questById(id)
+      state.quests = state.quests.filter((x) => x !== q)
+      state.questsDone = (state.questsDone ?? 0) + 1
+      grant(d.reward)
+      celebrate()
+      fillQuests()
+      changed()
+      hud.update()
+    },
     openItems() {
-      hud.openInventoryTab?.('items')
+      hud.openInventoryTab?.('potions')
     },
     hatch(eggId, n = 1, opts) {
       return eggs.hatch(eggId, n, opts)
@@ -408,7 +596,7 @@ export function createGame({ scene, camera, fx, props, hud }) {
   let trainTimer = 0
   let currentTable = null
   // pops, sounds, streak, level ups, table effects, arm spring: training.js
-  // Every trampoline landing on a training table counts as one training click.
+  // Every trampoline landing (none in the hub: treadmills train by running) counts as one click.
   const onBounce = () => {
     if (!fl.active() && !windowOpen && !eggs.busy()) train(true)
   }
@@ -422,6 +610,7 @@ export function createGame({ scene, camera, fx, props, hud }) {
     const mult = currentTable && platformUnlocked(currentTable.data) ? currentTable.data.mult : 1
     const gain = skillPerClick(mult)
     addSkill(gain)
+    state.stats.trains = (state.stats.trains ?? 0) + 1
     training.shot({ gain, mult, table: currentTable, bounce, from: !bounce && heldSling ? heldSling.getWorldPosition(slingPos) : null })
     if (state.autoRebirth && canRebirth()) actions.rebirth()
     changed()
@@ -468,6 +657,12 @@ export function createGame({ scene, camera, fx, props, hud }) {
     if (heldSling && heldStyle === style && heldSling.parent) return
     heldSling?.parent?.remove(heldSling)
     heldStyle = style
+    if (isCartStyle(style)) {
+      // carts are ridden in the launch, not held: no item in the hand, the arm stays down
+      heldSling = null
+      armBinding = null
+      return
+    }
     heldSling = buildSlingshot(style)
     heldSling.traverse((o) => (o.castShadow = true))
     const arm1 = avatar?.nodes?.ArmR1
@@ -500,6 +695,7 @@ export function createGame({ scene, camera, fx, props, hud }) {
     avatar = av
     animator = anim
     heldSling = null
+    fl.setAnimator(anim)
     attachSling()
     if (!nameTag.parent) {
       nameTag.position.set(0, 2.75, 0)
@@ -532,11 +728,11 @@ export function createGame({ scene, camera, fx, props, hud }) {
       const open = platformUnlocked(p)
       const lines = []
       if (p.price) {
-        lines.push({ text: 'All Worlds', size: 0.55 })
-        lines.push({ text: fmtShort(p.price), icon: 'trophy', pill: true, size: 0.6 })
-      } else lines.push({ text: `${p.rebirths}`, icon: 'rebirth', pill: true, size: 0.9 })
-      lines.push({ text: open ? 'Unlocked' : 'Locked', color: open ? '#4dff4d' : '#ff4848', size: 0.6 })
-      lines.push({ text: `${p.mult}x Skill`, size: 1 })
+        lines.push({ text: 'IN EVERY WORLD', size: 0.4 })
+        lines.push({ text: `${fmtShort(p.price)} Wins`, icon: 'trophy', color: '#ffd23a', pill: true, size: 0.48 })
+      } else if (p.rebirths) lines.push({ text: `${p.rebirths}`, icon: 'rebirth', pill: true, size: 0.5 })
+      lines.push({ text: open ? 'UNLOCKED' : 'LOCKED', color: open ? '#4dff6a' : '#ff3b3b', pill: true, size: 0.42 })
+      lines.push({ text: `x${p.mult.toLocaleString('en-US')} POWER`, color: p.style === 'royal' ? '#ffe27a' : '#ffffff', size: 0.95 })
       t.sign.set(lines)
     }
   }
@@ -577,13 +773,19 @@ export function createGame({ scene, camera, fx, props, hud }) {
   }
   let tableInside = null
   let tableToastAt = 0
+  let running = false // running in place on a treadmill belt (main.js animates it, see runSpeed)
+  // On a treadmill's belt: inside its oriented rectangle (t.belt), at deck height.
+  function onBelt(t, p) {
+    if (p.y < t.topY - 0.5 || p.y > t.topY + 1.5) return false
+    const b = t.belt
+    const dx = p.x - t.x
+    const dz = p.z - t.z
+    return Math.abs(dx * b.dx + dz * b.dz) < b.halfLen && Math.abs(dz * b.dx - dx * b.dz) < b.halfWid
+  }
   function checkTables(now) {
     const p = player.position
     let on = null
-    for (const t of props.tables) {
-      const d = Math.hypot(p.x - t.x, p.z - t.z)
-      if (d < t.radius + 0.4 && p.y > t.topY - 0.5 && p.y < t.topY + TRAIN.bounceHeight * TRAIN.bounceBoost * 2 + 1.5) on = t
-    }
+    for (const t of props.tables) if (onBelt(t, p)) on = t
     if (on !== tableInside) {
       tableInside = on
       training.enterTable(on)
@@ -593,8 +795,14 @@ export function createGame({ scene, camera, fx, props, hud }) {
       }
     }
     currentTable = on
-    // ring glow under the player while training on an unlocked table
-    if (on && platformUnlocked(on.data) && Math.random() < 0.3) fx.burst(1, { x: p.x, y: p.y + 0.1, z: p.z, spread: 1.5, speed: 1.2, lift: 2, life: 0.8, size: 0.3, color: '#ffd23a', shape: 'star' })
+    // Standing still on an unlocked belt: face the console and run in place; every step trains
+    // (train() is rate-limited by TRAIN.cooldown, like holding the click).
+    running = !!on && platformUnlocked(on.data) && player.grounded && Math.hypot(player.velocity.x, player.velocity.z) < 0.5 && !windowOpen && !eggs.busy()
+    if (running) {
+      player.facing = Math.atan2(on.belt.dx, on.belt.dz)
+      train()
+      if (Math.random() < 0.3) fx.burst(1, { x: p.x - on.belt.dx * 0.6, y: p.y + 0.15, z: p.z - on.belt.dz * 0.6, spread: 0.8, speed: 1.2, lift: 1.5, life: 0.6, size: 0.3, color: [on.color, '#ffffff'], shape: 'star' })
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -621,7 +829,7 @@ export function createGame({ scene, camera, fx, props, hud }) {
       }
       if (tableInside && !platformUnlocked(tableInside.data) && tableInside.data.price) {
         const t = tableInside.data
-        buyInfo = { key: t.id, title: `${t.mult}x Skill Table`, text: 'Unlock this training table for all worlds.', price: t.price, onBuy: () => buyTable(t) }
+        buyInfo = { key: t.id, title: `x${t.mult} Power Treadmill`, text: 'Unlock this treadmill in every world.', price: t.price, onBuy: () => buyTable(t) }
       }
     }
     // Free Rewards Chest + a rewarded ad: double the reward just claimed, or open it while it refills.
@@ -635,7 +843,7 @@ export function createGame({ scene, camera, fx, props, hud }) {
   function buyTable(t) {
     if (state.platforms.includes(t.id) || !spend(t.price)) return
     state.platforms.push(t.id)
-    hud.toast(`${t.mult}x Skill table unlocked!`, '#7dff7d')
+    hud.toast(`x${t.mult} Power treadmill unlocked!`, '#7dff7d')
     celebrate()
     changed()
   }
@@ -696,11 +904,12 @@ export function createGame({ scene, camera, fx, props, hud }) {
   }
 
   // ---------------------------------------------------------------------------
-  // Flight over the slime: the whole sequence lives in flight.js (FLY button,
-  // giant slingshots, arc, skips, reward, river regions, flight sounds).
+  // The cart launch: the whole sequence lives in flight.js (LAUNCH button, starting
+  // gate + cart, the ride, the throw, tumble, reward, region gates, sounds).
   // ---------------------------------------------------------------------------
   const fl = createFlight({
     scene,
+    camera,
     fx,
     ringPulse: (...a) => ringPulse(...a),
     blocked: () => windowOpen || eggs.busy(),
@@ -816,6 +1025,9 @@ export function createGame({ scene, camera, fx, props, hud }) {
   }
   // A saved game loaded from the server replaced `state`: rebuild everything derived from it.
   function resync() {
+    checkMilestones()
+    fillQuests()
+    glow.set(auraById(state.aura))
     applySettings()
     rebuildPets()
     refreshPads()
@@ -827,19 +1039,48 @@ export function createGame({ scene, camera, fx, props, hud }) {
   }
   function refreshSigns(nowMs) {
     const left = Math.max(0, state.chestAt - nowMs) / 1000
-    props.chest.sign.set([{ text: 'Free Rewards!', color: '#ffd23a', size: 1 }, { text: left > 0 ? `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : 'Ready!', color: left > 0 ? '#ffffff' : '#7dff7d', size: 0.7 }])
-    const d = new Date()
-    const toMidnight = 86400 - (d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds())
-    const hh = String(Math.floor(toMidnight / 3600)).padStart(2, '0')
-    const mm = String(Math.floor((toMidnight % 3600) / 60)).padStart(2, '0')
-    const ss = String(toMidnight % 60).padStart(2, '0')
-    props.updateSign.set([{ text: 'Next Update!', size: 1 }, { text: `${hh}:${mm}:${ss}`, icon: 'clock', color: '#ffd23a', size: 0.8 }])
+    props.chest.sign.set([{ text: 'DAILY CHEST', color: '#ffd23a', outline: '#5a2a00', size: 1 }, { text: left > 0 ? `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : 'Ready!', color: left > 0 ? '#ffffff' : '#7dff7d', size: 0.7 }])
     refreshBadge()
     if (rollDaily()) {
       changed()
       if (hud.openId === 'daily') hud.refreshWindow()
     }
     hud.tick()
+  }
+
+  // Rebirth milestones (REBIRTH_MILESTONES): each pet is given once when the rebirths reach it.
+  function checkMilestones() {
+    let got = false
+    for (const m of REBIRTH_MILESTONES) {
+      if (state.rebirths >= m.at && !state.milestones.includes(m.pet)) {
+        state.milestones.push(m.pet)
+        addPet(m.pet)
+        hud.toast(`Milestone! ${petById(m.pet).name} joined you!`, '#d8a8ff')
+        got = true
+      }
+    }
+    if (got) {
+      sfx.gift('pet')
+      rebuildPets()
+      changed()
+    }
+  }
+  // Auras: the glow around the player (auraGlow.js) and Auto Roll (a basic Roll every AURA_AUTO.every s).
+  const glow = createAuraGlow(scene)
+  let autoRoll = false
+  let autoAcc = 0
+  function updateAutoRoll(dt) {
+    if (!autoRoll) return
+    autoAcc += dt
+    if (autoAcc < AURA_AUTO.every) return
+    autoAcc = 0
+    const res = actions.rollAura('roll', true)
+    if (!res) {
+      autoRoll = false
+      hud.toast('Auto Roll stopped: not enough Wins', '#ff6a6a')
+      return hud.refreshWindow()
+    }
+    hud.auraRolled(res, 350)
   }
 
   // ---------------------------------------------------------------------------
@@ -873,6 +1114,7 @@ export function createGame({ scene, camera, fx, props, hud }) {
     }
 
     lastDt = dt
+    running = false
     if (!fl.active()) {
       checkPads()
       checkTables(now)
@@ -892,6 +1134,8 @@ export function createGame({ scene, camera, fx, props, hud }) {
 
     updatePets(dt, t)
     updateRings(dt)
+    updateAutoRoll(dt)
+    glow.update(dt, t, player.renderPosition, fl.active())
     training.update(dt, { table: currentTable, active: !fl.active() })
 
     secAcc += dt
@@ -916,6 +1160,9 @@ export function createGame({ scene, camera, fx, props, hud }) {
 
   // initial state
   rollDaily()
+  checkMilestones()
+  fillQuests()
+  glow.set(auraById(state.aura))
   applySettings()
   rebuildPets()
   refreshPads()
@@ -923,5 +1170,5 @@ export function createGame({ scene, camera, fx, props, hud }) {
   updateNameTag()
   bloxity.subscribeAuth?.(() => updateNameTag())
 
-  return { actions, checkOffline, update, afterAnimator, setAvatar, isFlying: () => fl.active(), isTraining: () => trainingActive, setBoards, resync, flight: fl, eggs }
+  return { actions, checkOffline, update, afterAnimator, setAvatar, isFlying: () => fl.active(), isTraining: () => trainingActive, runSpeed: () => (running ? HUB.treadmillRun : 0), setBoards, resync, flight: fl, eggs }
 }
